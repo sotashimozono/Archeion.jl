@@ -53,11 +53,12 @@ path if a required field (`id`/`project`/`title`/`gallery`) is missing.
 function read_record(dir::AbstractString)
     path = joinpath(dir, "record.toml")
     d = TOML.parsefile(path)
-    req(k) = if haskey(d, k)
-        d[k]
-    else
-        error("read_record: missing required field `$(k)` in `$(path)`")
-    end
+    req(k) =
+        if haskey(d, k)
+            d[k]
+        else
+            error("read_record: missing required field `$(k)` in `$(path)`")
+        end
     return Record(;
         id=req("id"),
         project=req("project"),
