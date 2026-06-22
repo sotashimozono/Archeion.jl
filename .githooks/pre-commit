@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Archeion pre-commit — block secrets from entering git history (gitleaks).
+# Activated per-clone with:  git config core.hooksPath .githooks
+# Defense-in-depth alongside GitHub push protection; catches secrets BEFORE they leave the machine.
+set -euo pipefail
+
+GL="$(command -v gitleaks || echo "$HOME/.local/bin/gitleaks")"
+if [ ! -x "$GL" ]; then
+  echo "[pre-commit] gitleaks not found — skipping secret scan (install to ~/.local/bin)" >&2
+  exit 0
+fi
+
+if "$GL" git --staged --redact --no-banner; then
+  exit 0
+fi
+
+echo "" >&2
+echo "[pre-commit] ❌ gitleaks detected a potential secret in staged changes — commit blocked." >&2
+echo "  • Remove it; keep secrets in env vars or a gitignored config (e.g. deploy.local.toml)." >&2
+echo "  • False positive? add an allowlist entry to .gitleaks.toml." >&2
+echo "  • Override (discouraged): git commit --no-verify" >&2
+exit 1

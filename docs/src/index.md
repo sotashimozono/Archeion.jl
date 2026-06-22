@@ -1,7 +1,7 @@
-# MyModule.jl
+# Archeion.jl
 
 ## Models
 
 ```@autodocs
-Modules = [MyModule]
+Modules = [Archeion]
 ```
