@@ -1,6 +1,6 @@
 # Behavioral tests for the Archeion MVP core. These pin the public contract of
-# capture_repro / Record / build_index / add_search, so the planned internals refactor
-# (_git -> LibGit2) and later changes are guarded against regressions.
+# capture_repro / Record / build_index / add_search, so internal refactors (e.g. the
+# _git -> LibGit2 swap) and later changes are guarded against regressions.
 using Archeion
 using Test
 using TOML
@@ -84,7 +84,9 @@ end
     @test b.has_manifest == true
     @test isfile(joinpath(dest, "repro", "Project.toml"))
     @test isfile(joinpath(dest, "repro", "Manifest.toml"))
-    @test isfile(joinpath(dest, "repro", "reproduce.sh"))
+    rs = read(joinpath(dest, "repro", "reproduce.sh"), String)
+    @test !occursin("git checkout unknown", rs)  # must not emit a broken checkout line
+    @test occursin("not a git repository", rs)   # explains why instead
 end
 
 @testset "capture_repro warns and reports has_manifest=false without a Manifest" begin
@@ -95,8 +97,8 @@ end
     @test b.has_manifest == false
 end
 
-# git-backed paths: skipped where the `git` CLI is unavailable. They pin the "dirty
-# includes untracked" semantics that the LibGit2 refactor must preserve.
+# git-backed paths: skipped where the `git` CLI is unavailable (used only to build the
+# fixture repos). They pin the "dirty includes untracked" semantics LibGit2 must preserve.
 if Sys.which("git") !== nothing
     function _init_repo(d)
         run(`git -C $d init -q`)
@@ -110,9 +112,12 @@ if Sys.which("git") !== nothing
     end
 
     @testset "capture_repro on a clean git repo" begin
-        b = Archeion.capture_repro(_init_repo(mktempdir()), mktempdir())
+        dest = mktempdir()
+        b = Archeion.capture_repro(_init_repo(mktempdir()), dest)
         @test occursin(r"^[0-9a-f]{40}$", b.git_commit)
         @test b.git_dirty == false
+        rs = read(joinpath(dest, "repro", "reproduce.sh"), String)
+        @test occursin("git checkout " * b.git_commit, rs)
     end
 
     @testset "capture_repro on a dirty git repo warns and sets git_dirty" begin

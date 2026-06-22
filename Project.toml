@@ -5,6 +5,7 @@ authors = ["sota shimozono <shimozono-sota631@g.ecc.u-tokyo.ac.jp>"]
 
 [deps]
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+LibGit2 = "76f85450-5226-5b5a-8eaa-529ad045b433"
 Pinax = "e782a80a-1ac9-479e-ba2b-0f3433ef5b4f"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
@@ -14,6 +15,7 @@ Pinax = {path = "../Pinax.jl"}
 [compat]
 Aqua = "0.8"
 Dates = "1"
+LibGit2 = "1"
 Pinax = "0.27"
 TOML = "1"
 Test = "1"
