@@ -5,15 +5,18 @@
   "type": "module",
   "description": "Web app for the Archeion experiment registry: reads the SQLite DB + figures that Archeion.jl (Julia) ingests, and serves a private, searchable, annotatable view. Runs as a daemon (panza) or per-request CGI (Lolipop).",
   "scripts": {
-    "dev": "node --watch src/server.js",
-    "start": "node src/server.js",
-    "test": "node --test"
+    "dev": "node --experimental-sqlite --watch src/server.js",
+    "start": "node --experimental-sqlite src/server.js",
+    "test": "node --experimental-sqlite --test",
+    "bundle": "esbuild src/cgi.js --bundle --platform=node --format=esm --outfile=dist/cgi.js"
   },
   "dependencies": {
-    "better-sqlite3": "^12.2.0",
     "markdown-it": "^14.1.0"
   },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   }
 }

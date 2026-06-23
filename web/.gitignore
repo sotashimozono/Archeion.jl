@@ -16,3 +16,6 @@ npm-debug.log*
 *.local.json
 .env
 .env.*
+
+# build output (bundled CGI)
+dist/

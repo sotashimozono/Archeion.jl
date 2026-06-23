@@ -34,8 +34,13 @@ const metaLine = (r) =>
   `<span class="status status-${esc(r.status)}">${esc(r.status || "")}</span> ` +
   `<span class="date">${esc((r.date || "").slice(0, 10))}</span> ${tagsHtml(r.tags)}</div>`;
 
+// record id contains "/" (project/run) — keep it LITERAL in URLs so Apache routes it.
+// encodeURIComponent would emit %2F, which Apache rejects with 404 (AllowEncodedSlashes Off,
+// not changeable in .htaccess). So encode everything except the slash.
+const rid = (id) => encodeURIComponent(id).replace(/%2F/gi, "/");
+
 const card = (r) =>
-  `<a class="card" href="/r/${encodeURIComponent(r.id)}">
+  `<a class="card" href="/r/${rid(r.id)}">
      <div class="title">${esc(r.title)}</div>${metaLine(r)}
    </a>`;
 
@@ -73,8 +78,6 @@ export function renderLanding({ pinned, recents, facets, activeTag, activeStatus
   return layout("Archeion", filters + pinnedSec + recentsSec);
 }
 
-// id may contain "/", which our routes keep literal; encode the rest.
-const rid = (id) => encodeURIComponent(id).replace(/%2F/gi, "/");
 const STATUSES = ["draft", "active", "done", "archived"];
 
 export function renderRecord(r, extras) {
@@ -123,7 +126,7 @@ export function renderSearch(q, results) {
   const items = results
     .map(
       (r) =>
-        `<a class="result" href="/r/${encodeURIComponent(r.id)}">
+        `<a class="result" href="/r/${rid(r.id)}">
            <div class="title">${esc(r.title)}</div>
            <div class="snip">${snipHtml(r.snip)}</div></a>`,
     )

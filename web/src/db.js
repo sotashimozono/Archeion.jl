@@ -1,13 +1,12 @@
-// Read-only access to the registry SQLite DB (the one Archeion.jl ingests).
-// The web app only reads here in P1; write-back (comments/tags/status) comes later.
-import Database from "better-sqlite3";
+// Access to the registry SQLite DB (the one Archeion.jl ingests). Uses node:sqlite
+// (Node 22+ builtin) — no native module, so the SAME code runs on panza (daemon, node 24)
+// and Lolipop (node-as-CGI, node 22 glibc-217). Requires the --experimental-sqlite flag.
+import { DatabaseSync } from "node:sqlite";
 
 export function openDb(path) {
-  // Read-write now (P2 write-back). busy_timeout lets per-request writers (Lolipop CGI)
-  // wait for the lock instead of erroring under the app's low write concurrency.
-  const db = new Database(path, { fileMustExist: true });
-  db.pragma("foreign_keys = ON");
-  db.pragma("busy_timeout = 4000");
+  const db = new DatabaseSync(path);
+  db.exec("PRAGMA foreign_keys = ON");
+  db.exec("PRAGMA busy_timeout = 4000"); // per-request writers wait for the lock (low concurrency)
   return db;
 }
 
