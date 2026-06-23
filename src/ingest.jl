@@ -95,48 +95,66 @@ function ingest(
     isempty(figures) || mkpath(figures)
     conn = SQLite.DB(db)
     n = 0
+    seen = Dict{String,Tuple{String,String}}()   # id -> (project, run): catch slug collisions
     try
-        for od in outdirs
-            od = String(od)
-            for st in DataVault.open_all(od)
-                info = st.info
-                rows = DataVault.load_ledger(st.vault)
-                cfgfile = joinpath(od, info.config_snapshot)
-                cfg = isfile(cfgfile) ? read(cfgfile, String) : ""
-                project = info.project_name
-                run = info.run
-                id = joinpath(_slug(project), _slug(run))
-                git = isempty(rows) ? "unknown" : get(rows[end], "git_hash", "unknown")
-                date =
-                    isempty(rows) ? string(Dates.now()) : get(rows[end], "completed_at", "")
-                body = _record_markdown(project, run, info, rows, cfg)
-                DBInterface.execute(
-                    conn,
-                    """
-                    INSERT INTO records (id,project,study,run,title,date,status,tags,git_commit,data_keys,figures,body_md,updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
-                    ON CONFLICT(id) DO UPDATE SET
-                      title=excluded.title, date=excluded.date, git_commit=excluded.git_commit,
-                      data_keys=excluded.data_keys, figures=excluded.figures, body_md=excluded.body_md,
-                      updated_at=datetime('now')
-                    """,
-                    (
-                        id,
-                        project,
-                        project,
-                        run,
-                        string(project, " / ", run),
-                        date,
-                        "active",
-                        _json_str_array([project]),
-                        git,
-                        "[]",
-                        "[]",
-                        body,
-                    ),
-                )
-                n += 1
+        DBInterface.execute(conn, "PRAGMA foreign_keys = ON")   # per-connection, not persisted
+        DBInterface.execute(conn, "BEGIN")                      # one transaction: atomic + fast
+        try
+            for od in outdirs
+                od = String(od)
+                for st in DataVault.open_all(od)
+                    info = st.info
+                    rows = DataVault.load_ledger(st.vault)
+                    cfgfile = joinpath(od, info.config_snapshot)
+                    cfg = isfile(cfgfile) ? read(cfgfile, String) : ""
+                    project = info.project_name
+                    run = info.run
+                    id = joinpath(_slug(project), _slug(run))
+                    if get(seen, id, (project, run)) != (project, run)
+                        @warn "ingest: slug collision — id maps to multiple runs (later overwrites)" id existing = seen[id] current = (
+                            project, run
+                        )
+                    end
+                    seen[id] = (project, run)
+                    git = isempty(rows) ? "unknown" : get(rows[end], "git_hash", "unknown")
+                    date = if isempty(rows)
+                        string(Dates.now(UTC))   # UTC, to match ledger ISO8601 timestamps
+                    else
+                        get(rows[end], "completed_at", "")
+                    end
+                    body = _record_markdown(project, run, info, rows, cfg)
+                    DBInterface.execute(
+                        conn,
+                        """
+                        INSERT INTO records (id,project,study,run,title,date,status,tags,git_commit,data_keys,figures,body_md,updated_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+                        ON CONFLICT(id) DO UPDATE SET
+                          title=excluded.title, date=excluded.date, git_commit=excluded.git_commit,
+                          data_keys=excluded.data_keys, figures=excluded.figures, body_md=excluded.body_md,
+                          updated_at=datetime('now')
+                        """,
+                        (
+                            id,
+                            project,
+                            project,
+                            run,
+                            string(project, " / ", run),
+                            date,
+                            "active",
+                            _json_str_array([project]),
+                            git,
+                            "[]",
+                            "[]",
+                            body,
+                        ),
+                    )
+                    n += 1
+                end
             end
+            DBInterface.execute(conn, "COMMIT")
+        catch
+            DBInterface.execute(conn, "ROLLBACK")
+            rethrow()
         end
     finally
         DBInterface.close!(conn)

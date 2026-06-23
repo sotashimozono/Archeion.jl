@@ -78,8 +78,15 @@ using DBInterface
     for r in DBInterface.execute(conn2, "SELECT count(*) AS c FROM records")
         cnt = r.c
     end
+    nfts2 = 0
+    for _ in DBInterface.execute(
+        conn2, "SELECT rowid FROM records_fts WHERE records_fts MATCH 'Provenance'"
+    )
+        nfts2 += 1
+    end
     DBInterface.close!(conn2)
     @test t2 == "[\"mytag\"]"                # preserved
     @test s2 == "done"                       # preserved
     @test cnt == 1                           # no duplicate
+    @test nfts2 == 1                         # FTS stays consistent after re-ingest (upsert path)
 end
