@@ -73,12 +73,49 @@ export function renderLanding({ pinned, recents, facets, activeTag, activeStatus
   return layout("Archeion", filters + pinnedSec + recentsSec);
 }
 
-export function renderRecord(r) {
+// id may contain "/", which our routes keep literal; encode the rest.
+const rid = (id) => encodeURIComponent(id).replace(/%2F/gi, "/");
+const STATUSES = ["draft", "active", "done", "archived"];
+
+export function renderRecord(r, extras) {
   if (!r) return layout("Not found", `<p class="empty">Record not found.</p>`);
+  let tags = [];
+  try {
+    tags = JSON.parse(r.tags || "[]");
+  } catch {
+    /* ignore */
+  }
+  const comments = (extras?.comments || [])
+    .map(
+      (c) =>
+        `<div class="comment"><div class="cmeta">${esc(c.author || "anon")} · ${esc(
+          (c.created_at || "").slice(0, 16),
+        )}</div><div class="md">${md.render(c.body_md || "")}</div></div>`,
+    )
+    .join("");
+  const statusOpts = STATUSES.map(
+    (s) => `<option${s === r.status ? " selected" : ""}>${s}</option>`,
+  ).join("");
+  const controls = `<section class="controls"><h2>Edit</h2>
+    <form method="post" action="/r/${rid(r.id)}/status" class="inline">
+      <select name="status">${statusOpts}</select><button>status</button></form>
+    <form method="post" action="/r/${rid(r.id)}/tags" class="inline">
+      <input name="tags" value="${esc(tags.join(", "))}" placeholder="tag, tag"><button>tags</button></form>
+    <form method="post" action="/r/${rid(r.id)}/pin" class="inline">
+      <input type="hidden" name="pinned" value="${r.pinned ? 0 : 1}"><button>${r.pinned ? "unpin" : "pin ★"}</button></form>
+  </section>`;
+  const discussion = `<section class="discussion"><h2>Discussion</h2>
+    ${comments || '<p class="empty">No comments yet.</p>'}
+    <form method="post" action="/r/${rid(r.id)}/comment" class="comment-form">
+      <input name="author" placeholder="name" class="author" autocomplete="off">
+      <textarea name="body_md" rows="3" placeholder="comment (markdown)…" required></textarea>
+      <button>add comment</button></form>
+  </section>`;
   return layout(
     r.title,
     `<article><h1>${esc(r.title)}</h1>${metaLine(r)}
-     <div class="md">${md.render(r.body_md || "")}</div></article>`,
+     <div class="md">${md.render(r.body_md || "")}</div>
+     ${controls}${discussion}</article>`,
   );
 }
 

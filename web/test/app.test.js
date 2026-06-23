@@ -67,6 +67,50 @@ test("status filter narrows the listing", () => {
   );
 });
 
+const local = (form) => ({
+  headers: { origin: "http://localhost", host: "localhost" },
+  body: new URLSearchParams(form),
+});
+
+test("write-back: add comment, rendered as markdown, appears on the record", () => {
+  const app = setup();
+  const post = app("POST", "/r/p/r1/comment", new URLSearchParams(),
+    local({ author: "alice", body_md: "looks **good**" }));
+  assert.equal(post.status, 303);
+  const r = app("GET", "/r/p/r1", new URLSearchParams());
+  assert.match(r.body, /alice/);
+  assert.match(r.body, /looks <strong>good<\/strong>/);
+});
+
+test("write-back: set status persists", () => {
+  const app = setup();
+  app("POST", "/r/p/r1/status", new URLSearchParams(), local({ status: "done" }));
+  assert.match(app("GET", "/r/p/r1", new URLSearchParams()).body, /status-done/);
+});
+
+test("write-back: set tags persists and is searchable as facet", () => {
+  const app = setup();
+  app("POST", "/r/p/r1/tags", new URLSearchParams(), local({ tags: "beta, gamma" }));
+  const r = app("GET", "/r/p/r1", new URLSearchParams());
+  assert.match(r.body, /#beta/);
+  assert.match(r.body, /#gamma/);
+});
+
+test("write-back: unpin removes the Pinned section", () => {
+  const app = setup(); // record starts pinned=1
+  app("POST", "/r/p/r1/pin", new URLSearchParams(), local({ pinned: "0" }));
+  assert.doesNotMatch(app("GET", "/", new URLSearchParams()).body, /★ Pinned/);
+});
+
+test("write-back: cross-origin POST is rejected (CSRF)", () => {
+  const app = setup();
+  const r = app("POST", "/r/p/r1/comment", new URLSearchParams(), {
+    headers: { origin: "http://evil.example", host: "localhost" },
+    body: new URLSearchParams({ body_md: "x" }),
+  });
+  assert.equal(r.status, 403);
+});
+
 test.after(() => {
   for (const s of ["", "-wal", "-shm"]) rmSync(dbPath + s, { force: true });
 });

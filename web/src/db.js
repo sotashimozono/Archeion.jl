@@ -3,8 +3,11 @@
 import Database from "better-sqlite3";
 
 export function openDb(path) {
-  const db = new Database(path, { readonly: true, fileMustExist: true });
+  // Read-write now (P2 write-back). busy_timeout lets per-request writers (Lolipop CGI)
+  // wait for the lock instead of erroring under the app's low write concurrency.
+  const db = new Database(path, { fileMustExist: true });
   db.pragma("foreign_keys = ON");
+  db.pragma("busy_timeout = 4000");
   return db;
 }
 
@@ -90,4 +93,38 @@ export function facets(db) {
     }
   }
   return { statuses, tags: [...tagSet].sort() };
+}
+
+// ---- write-back (P2) -------------------------------------------------------
+
+export function getComments(db, recordId) {
+  return db
+    .prepare(
+      "SELECT id, author, body_md, created_at FROM comments WHERE record_id = ? ORDER BY id ASC",
+    )
+    .all(recordId);
+}
+
+export function addComment(db, recordId, author, bodyMd) {
+  return db
+    .prepare("INSERT INTO comments (record_id, author, body_md) VALUES (?,?,?)")
+    .run(recordId, author || null, bodyMd).lastInsertRowid;
+}
+
+export function setStatus(db, id, status) {
+  return db
+    .prepare("UPDATE records SET status = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(status, id).changes;
+}
+
+export function setTags(db, id, tags) {
+  return db
+    .prepare("UPDATE records SET tags = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(JSON.stringify(tags), id).changes;
+}
+
+export function setPinned(db, id, pinned) {
+  return db
+    .prepare("UPDATE records SET pinned = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(pinned ? 1 : 0, id).changes;
 }
