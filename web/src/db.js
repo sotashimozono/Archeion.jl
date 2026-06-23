@@ -1,10 +1,12 @@
-// Read-only access to the registry SQLite DB (the one Archeion.jl ingests).
-// The web app only reads here in P1; write-back (comments/tags/status) comes later.
-import Database from "better-sqlite3";
+// Access to the registry SQLite DB (the one Archeion.jl ingests). Uses node:sqlite
+// (Node 22+ builtin) — no native module, so the SAME code runs on panza (daemon, node 24)
+// and Lolipop (node-as-CGI, node 22 glibc-217). Requires the --experimental-sqlite flag.
+import { DatabaseSync } from "node:sqlite";
 
 export function openDb(path) {
-  const db = new Database(path, { readonly: true, fileMustExist: true });
-  db.pragma("foreign_keys = ON");
+  const db = new DatabaseSync(path);
+  db.exec("PRAGMA foreign_keys = ON");
+  db.exec("PRAGMA busy_timeout = 4000"); // per-request writers wait for the lock (low concurrency)
   return db;
 }
 
@@ -90,4 +92,38 @@ export function facets(db) {
     }
   }
   return { statuses, tags: [...tagSet].sort() };
+}
+
+// ---- write-back (P2) -------------------------------------------------------
+
+export function getComments(db, recordId) {
+  return db
+    .prepare(
+      "SELECT id, author, body_md, created_at FROM comments WHERE record_id = ? ORDER BY id ASC",
+    )
+    .all(recordId);
+}
+
+export function addComment(db, recordId, author, bodyMd) {
+  return db
+    .prepare("INSERT INTO comments (record_id, author, body_md) VALUES (?,?,?)")
+    .run(recordId, author || null, bodyMd).lastInsertRowid;
+}
+
+export function setStatus(db, id, status) {
+  return db
+    .prepare("UPDATE records SET status = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(status, id).changes;
+}
+
+export function setTags(db, id, tags) {
+  return db
+    .prepare("UPDATE records SET tags = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(JSON.stringify(tags), id).changes;
+}
+
+export function setPinned(db, id, pinned) {
+  return db
+    .prepare("UPDATE records SET pinned = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(pinned ? 1 : 0, id).changes;
 }

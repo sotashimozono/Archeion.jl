@@ -2,7 +2,7 @@
 // transport-agnostic handler and assert the rendered HTML. Run with `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import { readFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -13,7 +13,7 @@ const dbPath = join(here, "_app_test.db");
 
 function setup() {
   for (const s of ["", "-wal", "-shm"]) rmSync(dbPath + s, { force: true });
-  const db = new Database(dbPath);
+  const db = new DatabaseSync(dbPath);
   db.exec(readFileSync(join(here, "..", "db", "schema.sql"), "utf8")); // handles triggers
   db.prepare(
     `INSERT INTO records (id,project,study,run,title,date,status,tags,git_commit,data_keys,figures,body_md,pinned)
@@ -33,6 +33,8 @@ test("landing lists records, pinned section, and tag facet", () => {
   assert.match(r.body, /p \/ r1/);
   assert.match(r.body, /★ Pinned/);
   assert.match(r.body, /#alpha/);
+  // record link keeps the slash literal (NOT %2F, which Apache 404s)
+  assert.match(r.body, /href="\/r\/p\/r1"/);
 });
 
 test("record page renders body_md to HTML", () => {
@@ -65,6 +67,50 @@ test("status filter narrows the listing", () => {
     app("GET", "/", new URLSearchParams({ status: "archived" })).body,
     /p \/ r1/,
   );
+});
+
+const local = (form) => ({
+  headers: { origin: "http://localhost", host: "localhost" },
+  body: new URLSearchParams(form),
+});
+
+test("write-back: add comment, rendered as markdown, appears on the record", () => {
+  const app = setup();
+  const post = app("POST", "/r/p/r1/comment", new URLSearchParams(),
+    local({ author: "alice", body_md: "looks **good**" }));
+  assert.equal(post.status, 303);
+  const r = app("GET", "/r/p/r1", new URLSearchParams());
+  assert.match(r.body, /alice/);
+  assert.match(r.body, /looks <strong>good<\/strong>/);
+});
+
+test("write-back: set status persists", () => {
+  const app = setup();
+  app("POST", "/r/p/r1/status", new URLSearchParams(), local({ status: "done" }));
+  assert.match(app("GET", "/r/p/r1", new URLSearchParams()).body, /status-done/);
+});
+
+test("write-back: set tags persists and is searchable as facet", () => {
+  const app = setup();
+  app("POST", "/r/p/r1/tags", new URLSearchParams(), local({ tags: "beta, gamma" }));
+  const r = app("GET", "/r/p/r1", new URLSearchParams());
+  assert.match(r.body, /#beta/);
+  assert.match(r.body, /#gamma/);
+});
+
+test("write-back: unpin removes the Pinned section", () => {
+  const app = setup(); // record starts pinned=1
+  app("POST", "/r/p/r1/pin", new URLSearchParams(), local({ pinned: "0" }));
+  assert.doesNotMatch(app("GET", "/", new URLSearchParams()).body, /★ Pinned/);
+});
+
+test("write-back: cross-origin POST is rejected (CSRF)", () => {
+  const app = setup();
+  const r = app("POST", "/r/p/r1/comment", new URLSearchParams(), {
+    headers: { origin: "http://evil.example", host: "localhost" },
+    body: new URLSearchParams({ body_md: "x" }),
+  });
+  assert.equal(r.status, 403);
 });
 
 test.after(() => {

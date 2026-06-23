@@ -93,3 +93,23 @@ article h1 { font-size: 1.6rem; margin: 0.2rem 0 0.5rem; }
 mark { background: var(--mark); padding: 0 0.1rem; }
 .empty { color: var(--muted); }
 code { font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace; }
+
+/* write-back: edit controls + discussion */
+.controls, .discussion { margin-top: 2rem; }
+form.inline { display: inline-flex; gap: 0.3rem; margin: 0 0.6rem 0.5rem 0; vertical-align: middle; }
+button {
+  font: inherit; font-size: 0.85rem; padding: 0.3rem 0.75rem;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--card);
+  color: var(--fg); cursor: pointer;
+}
+button:hover { border-color: var(--accent); color: var(--accent); }
+select, input, textarea {
+  font: inherit; padding: 0.35rem 0.55rem; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--card); color: var(--fg);
+}
+.comment { border-left: 3px solid var(--line); padding: 0.1rem 0 0.1rem 0.8rem; margin: 0.8rem 0; }
+.cmeta { font-size: 0.78rem; color: var(--muted); margin-bottom: 0.2rem; }
+.comment-form { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1.2rem; max-width: 640px; }
+.comment-form .author { max-width: 220px; }
+.comment-form textarea { resize: vertical; }
+.comment-form button { align-self: flex-start; }
