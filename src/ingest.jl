@@ -71,7 +71,11 @@ function _record_markdown(project, run, info, rows, config::AbstractString)
     return String(take!(io))
 end
 
-_json_str_array(xs) = string("[", join(("\"" * replace(string(x), "\"" => "\\\"") * "\"" for x in xs), ","), "]")
+function _json_str_array(xs)
+    return string(
+        "[", join(("\"" * replace(string(x), "\"" => "\\\"") * "\"" for x in xs), ","), "]"
+    )
+end
 
 """
     ingest(outdirs; db, figures="", schema=<web/db/schema.sql>) -> db
@@ -103,7 +107,8 @@ function ingest(
                 run = info.run
                 id = joinpath(_slug(project), _slug(run))
                 git = isempty(rows) ? "unknown" : get(rows[end], "git_hash", "unknown")
-                date = isempty(rows) ? string(Dates.now()) : get(rows[end], "completed_at", "")
+                date =
+                    isempty(rows) ? string(Dates.now()) : get(rows[end], "completed_at", "")
                 body = _record_markdown(project, run, info, rows, cfg)
                 DBInterface.execute(
                     conn,
@@ -116,8 +121,18 @@ function ingest(
                       updated_at=datetime('now')
                     """,
                     (
-                        id, project, project, run, string(project, " / ", run),
-                        date, "active", _json_str_array([project]), git, "[]", "[]", body,
+                        id,
+                        project,
+                        project,
+                        run,
+                        string(project, " / ", run),
+                        date,
+                        "active",
+                        _json_str_array([project]),
+                        git,
+                        "[]",
+                        "[]",
+                        body,
                     ),
                 )
                 n += 1

@@ -41,9 +41,8 @@ using DBInterface
     # Read columns DURING iteration (SQLite.jl rows are cursor views; don't collect-then-read).
     conn = SQLite.DB(db)
     rid = proj = status = tags = body = ""
-    for r in DBInterface.execute(
-        conn, "SELECT id, project, status, tags, body_md FROM records"
-    )
+    for r in
+        DBInterface.execute(conn, "SELECT id, project, status, tags, body_md FROM records")
         rid, proj, status, tags, body = r.id, r.project, r.status, r.tags, r.body_md
     end
     @test rid == "smoke/r1"
@@ -72,7 +71,8 @@ using DBInterface
     conn2 = SQLite.DB(db)
     t2 = s2 = ""
     cnt = 0
-    for r in DBInterface.execute(conn2, "SELECT tags, status FROM records WHERE id=?", (rid,))
+    for r in
+        DBInterface.execute(conn2, "SELECT tags, status FROM records WHERE id=?", (rid,))
         t2, s2 = r.tags, r.status
     end
     for r in DBInterface.execute(conn2, "SELECT count(*) AS c FROM records")
