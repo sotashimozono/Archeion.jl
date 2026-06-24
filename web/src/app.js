@@ -7,10 +7,13 @@ import {
   projectMeta, addProjectTag, removeProjectTag, addTodo, toggleTodo, removeTodo,
   ensureUser, setRecordImportance, setFigureImportance, setArchived, toggleBookmark,
   bookmarkedSet, userBookmarks, addComment, addTag, removeTag,
+  notesForDisplay, allNotesForDisplay, getNote, addNote, updateNote, removeNote,
+  projectContext, contextMarkdown,
 } from "./db.js";
 import * as V from "./render.js";
 
 const html = (b, s = 200) => ({ status: s, type: "text/html; charset=utf-8", body: b });
+const json = (o, s = 200) => ({ status: s, type: "application/json; charset=utf-8", body: JSON.stringify(o, null, 2) });
 const redirect = (loc) => ({ status: 303, type: "text/html; charset=utf-8", body: "", headers: { Location: loc } });
 const rid = (id) => encodeURIComponent(id).replace(/%2F/gi, "/");
 const parseTags = (s) => (s || "").split(/[,\s]+/).map((t) => t.replace(/^#/, "").trim()).filter(Boolean);
@@ -110,6 +113,23 @@ export function createApp(dbPath) {
         removeTodo(db, body.get("id"));
         return ok(back(h, "/"));
       }
+      // notes use plain forms (they carry markdown + [[mentions]] that only the server renders), so
+      // they redirect back and the page re-renders — no optimistic path.
+      if (path === "/noteadd") {
+        const scope = body.get("scope") || "";
+        addNote(db, scope, body.get("title") || "", body.get("body") || "");
+        return redirect(scope ? `/p/${rid(scope)}` : "/notes");
+      }
+      if (path === "/noteedit") {
+        const n = getNote(db, body.get("id"));
+        if (n) updateNote(db, n.id, body.get("title") || "", body.get("body") || "");
+        return redirect(n && n.scope ? `/p/${rid(n.scope)}` : "/notes");
+      }
+      if (path === "/notedel") {
+        const n = getNote(db, body.get("id"));
+        if (n) removeNote(db, n.id);
+        return redirect(n && n.scope ? `/p/${rid(n.scope)}` : "/notes");
+      }
       const m = path.match(/^\/r\/(.+)\/comment$/);
       if (m) {
         const id = decodeURIComponent(m[1]);
@@ -165,6 +185,9 @@ export function createApp(dbPath) {
     if (path === "/archived") {
       return html(V.renderList("🗄 Archived", archivedRecords(db), side()));
     }
+    if (path === "/notes") {
+      return html(V.renderNotes(allNotesForDisplay(db), side()));
+    }
     if (path.startsWith("/p/")) {
       const project = decodeURIComponent(path.slice(3));
       const sort = query.get("sort") || "date"; // experiments sort
@@ -175,11 +198,24 @@ export function createApp(dbPath) {
           archived: archivedByProject(db, project),
           figures: figuresGallery(db, { project, limit: 60, sort: fsort }),
           meta: projectMeta(db, project),
+          notes: notesForDisplay(db, project),
           sort,
           fsort,
           ...side(),
         }),
       );
+    }
+    {
+      // the project-context harness output (human↔LLM↔compute seam): ?format=md → an ingestible pack,
+      // else atomic JSON (meta / notes / discussion / records + their datavault_ref + body_md).
+      const m = path.match(/^\/api\/project\/(.+)\/context$/);
+      if (m) {
+        const ctx = projectContext(db, decodeURIComponent(m[1]));
+        if (!ctx) return { status: 404, type: "application/json; charset=utf-8", body: "{}" };
+        if (query.get("format") === "md")
+          return { status: 200, type: "text/markdown; charset=utf-8", body: contextMarkdown(ctx) };
+        return json(ctx);
+      }
     }
     {
       // JSON for inject.js (the overlay on a Pinax page): record meta + tags + runs + bookmark + comments

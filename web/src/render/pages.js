@@ -5,6 +5,38 @@ import { recordCard, figureCard, bookmarkForm, tagEditor, sortControl, impSelect
 import { PARA } from "../constants.js";
 import { layout } from "./layout.js";
 
+// ---- notes (Zettelkasten) ----
+// linkify [[target]] → a markdown link when the mention resolved (record/project), else leave literal
+function noteBodyHtml(n) {
+  let t = String(n.body_md || "");
+  for (const m of n.mentions || []) if (m.ref) t = t.split(`[[${m.target}]]`).join(`[${m.target}](${m.ref})`);
+  return md.render(t);
+}
+function noteCard(n, showScope) {
+  const scope = showScope
+    ? `<a class="note-scope" href="${n.scope ? `/p/${rid(n.scope)}` : "/notes"}">${esc(n.scope || "global")}</a>`
+    : "";
+  return `<div class="note" data-note="${n.id}">
+    <div class="note-head">${n.title ? `<span class="note-title">${esc(n.title)}</span>` : ""}${scope}<span class="note-when muted">${esc((n.updated_at || "").slice(0, 10))}</span></div>
+    <div class="md note-body">${noteBodyHtml(n)}</div>
+    <div class="note-foot">
+      <details class="note-edit"><summary>edit</summary>
+        <form method="post" action="/noteedit"><input type="hidden" name="id" value="${n.id}">
+          <input name="title" value="${esc(n.title || "")}" placeholder="title (optional)" autocomplete="off">
+          <textarea name="body" rows="4">${esc(n.body_md)}</textarea>
+          <div class="note-actions"><button>save</button></div></form></details>
+      <form method="post" action="/notedel" class="note-del"><input type="hidden" name="id" value="${n.id}"><button title="delete note">×</button></form>
+    </div></div>`;
+}
+function notesBlock(scope, notes, { showScope = false } = {}) {
+  const items = notes.map((n) => noteCard(n, showScope)).join("") || `<p class="empty">No notes yet.</p>`;
+  const add = `<form method="post" action="/noteadd" class="note-add"><input type="hidden" name="scope" value="${esc(scope)}">
+    <input name="title" placeholder="title (optional)" autocomplete="off">
+    <textarea name="body" rows="3" placeholder="note (markdown; [[project]] or [[record-id]] to link)…" required></textarea>
+    <div class="note-actions"><button>add note</button></div></form>`;
+  return `<div class="notes">${items}${add}</div>`;
+}
+
 export function renderLanding({ recents, activity, projects, tags, bset, user }) {
   const cards = recents.map((r) => recordCard(r, bset)).join("") ||
     `<p class="empty">No records — run <code>Archeion.ingest(doc)</code>.</p>`;
@@ -104,7 +136,7 @@ export function renderProjectSearch(q, results, { fields = [], projects, tags, u
   return layout(`search: ${q}`, main, { q, user, projects, tags, fields });
 }
 
-export function renderProject(project, { records, archived = [], figures, meta = {}, sort = "date", fsort = "importance", projects, tags, bset, user }) {
+export function renderProject(project, { records, archived = [], figures, meta = {}, notes = [], sort = "date", fsort = "importance", projects, tags, bset, user }) {
   const cards = records.map((r) => recordCard(r, bset)).join("") || `<p class="empty">No records.</p>`;
   const FIG_INIT = 12; // figures visible before "Show 10 more"
   const figCards = figures.map((f, i) => figureCard(f, bset, i >= FIG_INIT ? "fig-hidden" : "")).join("");
@@ -144,8 +176,10 @@ export function renderProject(project, { records, archived = [], figures, meta =
   const expBase = `/p/${rid(project)}?fsort=${fsort}&`; // keep figure sort when re-sorting experiments
   const figBase = `/p/${rid(project)}?sort=${sort}&`; //   keep experiment sort when re-sorting figures
   const figMore = `<div class="figmore">${moreCount ? `<button type="button" class="showmore" data-step="10">Show 10 more</button>` : ""}<a class="allfigs" href="/gallery?project=${encodeURIComponent(project)}&sort=${fsort}">All figures →</a></div>`;
-  const main = `<div class="phead"><h1>${esc(project)}</h1></div>
+  const ctxUrl = `/api/project/${encodeURIComponent(project)}/context`;
+  const main = `<div class="phead"><h1>${esc(project)}</h1><span class="ctxlinks" title="human context, for the LLM compute loop">LLM context: <a href="${ctxUrl}">json</a> · <a href="${ctxUrl}?format=md">md</a></span></div>
     ${pmeta}
+    <section class="notes-sec"><h3>Notes (${notes.length})</h3>${notesBlock(project, notes)}</section>
     <section><h3>Experiments (${records.length}) ${sortControl(expBase, sort)}</h3><div class="cards">${cards}</div></section>
     ${figures.length ? `<section><h3>Figures (${figures.length}) ${sortControl(figBase, fsort, "fsort")}</h3><div class="figgrid">${figCards}</div>${figMore}</section>` : ""}
     ${archived.length ? `<details class="archived-sec" open><summary>🗄 Archived (${archived.length})</summary><div class="cards">${archCards}</div></details>` : ""}`;
@@ -159,6 +193,14 @@ export function renderBookmarks({ records, figures }, { projects, tags, bset, us
     <section><h3>Experiments (${records.length})</h3><div class="cards">${cards || '<p class="empty">none</p>'}</div></section>
     <section><h3>Figures (${figures.length})</h3><div class="figgrid">${figs || '<p class="empty">none</p>'}</div></section>`;
   return layout("Bookmarks", main, { user, projects, tags });
+}
+
+// global notes page: every note (project-scoped + global), each tagged with its scope
+export function renderNotes(notes, { projects, tags, user }) {
+  const main = `<h2>📝 Notes</h2>
+    <p class="muted">Project &amp; global notes. Use <code>[[project]]</code> or <code>[[record-id]]</code> to link; they feed each project's LLM context pack.</p>
+    ${notesBlock("", notes, { showScope: true })}`;
+  return layout("Notes", main, { user, projects, tags });
 }
 
 // generic record list (tag filter, etc.)

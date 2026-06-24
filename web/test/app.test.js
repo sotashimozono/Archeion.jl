@@ -148,6 +148,42 @@ test("CSRF: cross-origin POST is rejected", () => {
   assert.equal(r.status, 403);
 });
 
+test("notes: add a project note; [[mention]] linkifies; shows on project + global pages", () => {
+  const app = setup();
+  assert.equal(post(app, "/noteadd", { scope: "proj", title: "βc grid", body: "refine [[p/r1]] near βc; cf [[proj]]" }).status, 303);
+  const proj = get(app, "/p/proj").body;
+  assert.match(proj, /Notes \(1\)/);
+  assert.match(proj, /βc grid/);
+  assert.match(proj, /href="\/r\/p\/r1"/); // record mention resolved to a link
+  assert.match(proj, /href="\/p\/proj"/); // project mention resolved
+  const all = get(app, "/notes").body;
+  assert.match(all, /βc grid/);
+  assert.match(all, /note-scope/); // global page tags each note with its scope
+});
+
+test("context: /api/project/:n/context is an atomic JSON pack; ?format=md is an ingestible brief", () => {
+  const app = setup();
+  post(app, "/noteadd", { scope: "proj", body: "a human note" });
+  const r = get(app, "/api/project/proj/context");
+  assert.equal(r.status, 200);
+  const ctx = JSON.parse(r.body);
+  assert.equal(ctx.schema, "archeion/project-context@1");
+  assert.equal(ctx.notes.length, 1);
+  assert.equal(ctx.records.length, 1);
+  assert.ok(Array.isArray(ctx.records[0].runs)); // compute seam (datavault_ref) present per record
+  assert.match(ctx.records[0].body_md, /magnetization/); // RAG text carried through
+  const md = get(app, "/api/project/proj/context", { format: "md" });
+  assert.match(md.type, /text\/markdown/);
+  assert.match(md.body, /# proj — project context/);
+  assert.match(md.body, /## Notes/);
+  assert.match(md.body, /## Records/);
+});
+
+test("context: unknown project → 404", () => {
+  const app = setup();
+  assert.equal(get(app, "/api/project/nope/context").status, 404);
+});
+
 test.after(() => {
   for (const s of ["", "-wal", "-shm"]) rmSync(dbPath + s, { force: true });
 });

@@ -32,21 +32,6 @@ function _lftp_get_script(t::FTPSTransport, remote::AbstractString, dest::Abstra
     """
 end
 
-# Run an lftp script from a 0600 temp file (keeps the password out of process args, like `deploy`).
-function _run_lftp(script::AbstractString)
-    lftp = Sys.which("lftp")
-    lftp === nothing && error("Archeion: `lftp` not found — needed for the FTPS transport.")
-    sf = tempname()
-    write(sf, script)
-    chmod(sf, 0o600)
-    try
-        run(`$lftp -f $sf`)
-    finally
-        rm(sf; force=true)
-    end
-    return nothing
-end
-
 # remote path of a file under the docroot: absolute as-is, else joined to the FTPS remote_dir.
 function _ftps_remote(t::FTPSTransport, rel::AbstractString)
     return startswith(rel, "/") ? String(rel) : rstrip(t.target.remote_dir, '/') * "/" * rel
@@ -150,7 +135,7 @@ function publish(
         html_dir=html_dir,
         content_dir=content_dir,
     )
-    deploy(site; config=config, delete=delete)
+    push_dir(transport(config), site; delete=delete)   # backend-neutral push (symmetric with pull)
     @info "publish: pushed the registry" record = res.record site
     return res
 end

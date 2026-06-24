@@ -21,6 +21,7 @@ export function layout(title, main, { q = "", user = "", projects = [], tags = [
 <span class="who">${esc(user)}</span></header>
 <div class="wrap"><nav class="side">
   <a class="navitem" href="/gallery">🖼 Figures</a>
+  <a class="navitem" href="/notes">📝 Notes</a>
   <a class="navitem" href="/bookmarks">★ Bookmarks</a>
   <a class="navitem" href="/archived">🗄 Archived</a>
   ${paraSections}

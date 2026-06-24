@@ -99,6 +99,22 @@ function _lftp_script(t::DeployTarget, site::AbstractString; delete::Bool=true)
     """
 end
 
+# Run an lftp script from a 0600 temp file (the password lands only in that file, never in process
+# args). Shared by `deploy` (push) and the FTPS transport (push_dir / pull_file in transport.jl).
+function _run_lftp(script::AbstractString)
+    lftp = Sys.which("lftp")
+    lftp === nothing && error("Archeion: `lftp` not found — needed for FTPS.")
+    sf = tempname()
+    write(sf, script)
+    chmod(sf, 0o600)
+    try
+        run(`$lftp -f $sf`)
+    finally
+        rm(sf; force=true)
+    end
+    return nothing
+end
+
 """
     deploy(site; config="deploy.local.toml", delete=true) -> Bool
 
@@ -111,16 +127,6 @@ function deploy(
     site::AbstractString; config::AbstractString="deploy.local.toml", delete::Bool=true
 )
     isdir(site) || error("deploy: site dir not found: $(site)")
-    lftp = Sys.which("lftp")
-    lftp === nothing && error("deploy: `lftp` not found — needed for the FTPS upload.")
-    t = read_deploy_target(config)
-    sf = tempname()
-    write(sf, _lftp_script(t, site; delete=delete))
-    chmod(sf, 0o600)
-    try
-        run(`$lftp -f $sf`)
-        return true
-    finally
-        rm(sf; force=true)
-    end
+    _run_lftp(_lftp_script(read_deploy_target(config), site; delete=delete))
+    return true
 end

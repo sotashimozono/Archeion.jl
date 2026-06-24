@@ -112,6 +112,21 @@ CREATE TABLE IF NOT EXISTS project_todos (
 );
 CREATE INDEX IF NOT EXISTS idx_project_todos ON project_todos(project);
 
+-- free-form Zettelkasten notes (app-owned; Node self-creates this too → live DB migrates without a
+-- re-ingest). scope = a project slug, or '' for a global note. body_md may contain [[project]] /
+-- [[record-id]] mentions (resolved to links for humans, to a typed mentions[] for the LLM context).
+-- This is the human-authored context the project-context harness output (/api/project/:n/context)
+-- exposes to the LLM compute loop alongside the existing meta / discussion / records.
+CREATE TABLE IF NOT EXISTS notes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope      TEXT    NOT NULL DEFAULT '',      -- project slug, or '' = global
+    title      TEXT    NOT NULL DEFAULT '',      -- optional short title
+    body_md    TEXT    NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_notes_scope ON notes(scope);
+
 -- ===================== USERS + PER-USER (app-owned) =====================
 CREATE TABLE IF NOT EXISTS users (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,

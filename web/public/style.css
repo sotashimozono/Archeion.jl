@@ -98,6 +98,35 @@ h3 { font-size: .8rem; color: var(--muted); margin: 1.2rem 0 .5rem; }
   padding: .35rem .9rem; font: inherit; font-size: .85rem; cursor: pointer; transition: border-color .12s, background .12s; }
 .showmore:hover { border-color: var(--accent); background: #f0f0ec; }
 .figmore .allfigs { color: var(--accent); font-size: .9rem; }
+
+/* notes (Zettelkasten) + the LLM context links */
+.phead { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+.ctxlinks { font-size: .75rem; color: var(--muted); }
+.ctxlinks a { color: var(--accent); }
+.notes-sec { margin: 1rem 0; }
+.notes { display: flex; flex-direction: column; gap: .6rem; max-width: 760px; }
+.note { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: .6rem .8rem; }
+.note-head { display: flex; align-items: baseline; gap: .5rem; font-size: .8rem; }
+.note-title { font-weight: 600; }
+.note-scope { color: var(--accent); }
+.note-when { margin-left: auto; }
+.note-body { font-size: .9rem; }
+.note-body > p:first-child { margin-top: .2rem; }
+.note-body > p:last-child { margin-bottom: 0; }
+.note-foot { display: flex; align-items: center; gap: .6rem; margin-top: .3rem; }
+.note-edit > summary { cursor: pointer; color: var(--muted); font-size: .75rem; list-style: none; }
+.note-edit > summary::-webkit-details-marker { display: none; }
+.note-edit form, .note-add { display: flex; flex-direction: column; gap: .4rem; margin-top: .4rem; }
+.note-add { border: 1px dashed var(--line); border-radius: var(--r); padding: .6rem .8rem; }
+.note input, .note textarea, .note-add input, .note-add textarea {
+  font: inherit; padding: .4rem .6rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); width: 100%; box-sizing: border-box; }
+.note-actions { display: flex; gap: .5rem; }
+.note-actions button, .note-add button { align-self: flex-start; cursor: pointer; font: inherit; font-size: .85rem;
+  padding: .35rem .85rem; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
+.note-actions button:hover, .note-add button:hover { border-color: var(--accent); }
+.note-del { margin: 0 0 0 auto; }
+.note-del button { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 1rem; opacity: .5; }
+.note-del button:hover { opacity: 1; color: #c0392b; }
 .figcard img { width: 100%; height: 150px; object-fit: contain; background: #fafafa; display: block; border-bottom: 1px solid var(--line); }
 .figcard figcaption { padding: .5rem .6rem; font-size: .8rem; display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
 .figcard .rt { color: var(--muted); }

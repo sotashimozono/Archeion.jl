@@ -11,3 +11,5 @@ export * from "./db/projects.js";
 export * from "./db/tags.js";
 export * from "./db/search.js";
 export * from "./db/annotations.js";
+export * from "./db/notes.js";
+export * from "./db/context.js";

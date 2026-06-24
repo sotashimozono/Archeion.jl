@@ -19,5 +19,10 @@ export function openDb(path) {
     "CREATE TABLE IF NOT EXISTS project_todos (id INTEGER PRIMARY KEY AUTOINCREMENT, project TEXT NOT NULL, " +
       "body TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0, ord INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
   );
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, scope TEXT NOT NULL DEFAULT '', " +
+      "title TEXT NOT NULL DEFAULT '', body_md TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), " +
+      "updated_at TEXT NOT NULL DEFAULT (datetime('now')))",
+  );
   return db;
 }
