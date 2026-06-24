@@ -74,14 +74,20 @@ function _doc_body_md(doc, project, runs, git)
     return String(take!(io))
 end
 
-_img_path(f) = (imgs = filter(a -> !endswith(lowercase(a), ".csv"), f.assets);
-isempty(imgs) ? "" : imgs[1])
+function _img_path(f)
+    return (
+        imgs=filter(a -> !endswith(lowercase(a), ".csv"), f.assets);
+        isempty(imgs) ? "" : imgs[1]
+    )
+end
 
 # Copy a figure asset into the content store (content_dir/figures/<safe-figid>.<ext>) and return
 # the path RELATIVE to content_dir (what the web app serves). With no content_dir, keep the raw path.
 function _store_fig(src, fid, content_dir)
     (isempty(src) || isempty(content_dir)) && return src
-    rel = joinpath("figures", replace(fid, r"[^A-Za-z0-9_-]" => "_") * lowercase(splitext(src)[2]))
+    rel = joinpath(
+        "figures", replace(fid, r"[^A-Za-z0-9_-]" => "_") * lowercase(splitext(src)[2])
+    )
     dest = joinpath(content_dir, rel)
     mkpath(dirname(dest))
     isfile(src) && cp(src, dest; force=true)
@@ -104,7 +110,9 @@ function _store_pages(src_dir, rid, content_dir)
     # added to the run's own Pinax page (no iframe). It reads the record id from window.ARCHEION_RECORD.
     inj = string(
         "<link rel=\"stylesheet\" href=\"/inject.css\">",
-        "<script>window.ARCHEION_RECORD=", repr(rid), ";</script>",
+        "<script>window.ARCHEION_RECORD=",
+        repr(rid),
+        ";</script>",
         "<script src=\"/inject.js\"></script>",
     )
     write(idx, replace(read(idx, String), "</body>" => inj * "</body>"; count=1))
@@ -149,7 +157,9 @@ function ingest(
         DBInterface.execute(conn, "BEGIN")
         try
             # ensure the project row (FK target), keyed by the canonical slug; para/description are app-owned, preserved
-            DBInterface.execute(conn, "INSERT OR IGNORE INTO projects (name) VALUES (?)", (pslug,))
+            DBInterface.execute(
+                conn, "INSERT OR IGNORE INTO projects (name) VALUES (?)", (pslug,)
+            )
             # record — content only; ON CONFLICT preserves importance/archived (app-owned)
             DBInterface.execute(
                 conn,
@@ -161,7 +171,17 @@ function ingest(
                   html_path=excluded.html_path, pdf_path=excluded.pdf_path, body_md=excluded.body_md,
                   date=excluded.date, git_commit=excluded.git_commit, updated_at=datetime('now')
                 """,
-                (rid, pslug, doc.meta.title, source, html_path, pdf_path, body, date, gitval),
+                (
+                    rid,
+                    pslug,
+                    doc.meta.title,
+                    source,
+                    html_path,
+                    pdf_path,
+                    body,
+                    date,
+                    gitval,
+                ),
             )
 
             # record_runs — replace for this record (ingest-owned)
@@ -177,7 +197,9 @@ function ingest(
             # content version history — append a version only when the content fingerprint
             # (title + body_md + run-set + git) changes; a pure re-render is idempotent (no new row).
             runkey = join(sort!([string(p, "/", r) for (p, r) in runs]), ",")
-            chash = bytes2hex(sha256(string(doc.meta.title, "\0", body, "\0", runkey, "\0", gitval)))
+            chash = bytes2hex(
+                sha256(string(doc.meta.title, "\0", body, "\0", runkey, "\0", gitval))
+            )
             lastver = 0
             lasthash = ""
             for r in DBInterface.execute(
@@ -209,7 +231,13 @@ function ingest(
                     ON CONFLICT(id) DO UPDATE SET
                       ord=excluded.ord, path=excluded.path, caption=excluded.caption
                     """,
-                    (fid, rid, i, _store_fig(_img_path(f), fid, content_dir), string(f.caption)),
+                    (
+                        fid,
+                        rid,
+                        i,
+                        _store_fig(_img_path(f), fid, content_dir),
+                        string(f.caption),
+                    ),
                 )
             end
             placeholders = isempty(kept) ? "''" : join(fill("?", length(kept)), ",")

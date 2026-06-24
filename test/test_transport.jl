@@ -34,7 +34,10 @@ using Test
 
     # unknown kind → a clear error pointing at how to add a backend
     cfg3 = joinpath(tmp, "rsync.toml")
-    write(cfg3, "[archeion.remote]\nkind=\"rsync\"\n[ftp]\nhost=\"h\"\nuser=\"u\"\npassword=\"p\"\n")
+    write(
+        cfg3,
+        "[archeion.remote]\nkind=\"rsync\"\n[ftp]\nhost=\"h\"\nuser=\"u\"\npassword=\"p\"\n",
+    )
     @test_throws ErrorException Archeion.transport(cfg3)
     @test_throws ErrorException Archeion.pull(cfg3)                  # pull propagates the dispatch error
 

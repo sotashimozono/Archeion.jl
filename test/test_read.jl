@@ -28,7 +28,9 @@ using DBInterface
 
     # --- simulate the WEB APP writing the annotation layer ---
     conn = SQLite.DB(db)
-    DBInterface.execute(conn, "UPDATE records SET importance=2, archived=1 WHERE id=?", (rid,))
+    DBInterface.execute(
+        conn, "UPDATE records SET importance=2, archived=1 WHERE id=?", (rid,)
+    )
     DBInterface.execute(conn, "INSERT INTO tags (name) VALUES ('mps')")
     DBInterface.execute(conn, "INSERT INTO tags (name) VALUES ('tpq')")
     DBInterface.execute(
@@ -48,7 +50,9 @@ using DBInterface
         (rid,),
     )
     DBInterface.execute(
-        conn, "UPDATE projects SET para='Areas', description='thermal study' WHERE name=?", (proj,)
+        conn,
+        "UPDATE projects SET para='Areas', description='thermal study' WHERE name=?",
+        (proj,),
     )
     DBInterface.execute(
         conn,
@@ -139,7 +143,9 @@ end
     # content_hash is a SHA-256 hex digest (stable across Julia versions, unlike Base.hash)
     let conn = SQLite.DB(db), h = ""
         for r in DBInterface.execute(
-            conn, "SELECT content_hash FROM record_versions WHERE record_id=? LIMIT 1", (rid,)
+            conn,
+            "SELECT content_hash FROM record_versions WHERE record_id=? LIMIT 1",
+            (rid,),
         )
             h = r.content_hash
         end
@@ -169,7 +175,9 @@ end
 
     # the human annotates on the remote (importance/archived/tags/comment/project description)
     conn = SQLite.DB(db)
-    DBInterface.execute(conn, "UPDATE records SET importance=3, archived=1 WHERE id=?", (rid,))
+    DBInterface.execute(
+        conn, "UPDATE records SET importance=3, archived=1 WHERE id=?", (rid,)
+    )
     DBInterface.execute(conn, "INSERT INTO tags (name) VALUES ('keep')")
     DBInterface.execute(
         conn,

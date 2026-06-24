@@ -24,7 +24,11 @@ using DBInterface
 
     db = joinpath(tmp, "archeion.db")
     res = Archeion.ingest(
-        doc; db=db, project="thermal", source="report", runs=[("thermal", "r1"), ("thermal", "r2")]
+        doc;
+        db=db,
+        project="thermal",
+        source="report",
+        runs=[("thermal", "r1"), ("thermal", "r2")],
     )
     @test res.record == "thermal/report"
     @test res.figures == 2
@@ -45,7 +49,9 @@ using DBInterface
     @test fids == ["thermal/report:mag", "thermal/report:energy"]   # first-class, STABLE ids
 
     nruns = 0
-    for _ in DBInterface.execute(conn, "SELECT 1 FROM record_runs WHERE record_id='thermal/report'")
+    for _ in DBInterface.execute(
+        conn, "SELECT 1 FROM record_runs WHERE record_id='thermal/report'"
+    )
         nruns += 1
     end
     @test nruns == 2
@@ -68,7 +74,11 @@ using DBInterface
     DBInterface.close!(conn)
 
     Archeion.ingest(
-        doc; db=db, project="thermal", source="report", runs=[("thermal", "r1"), ("thermal", "r2")]
+        doc;
+        db=db,
+        project="thermal",
+        source="report",
+        runs=[("thermal", "r1"), ("thermal", "r2")],
     )
 
     conn2 = SQLite.DB(db)
@@ -114,7 +124,9 @@ end
 
     conn = SQLite.DB(db)
     proj = ""
-    for r in DBInterface.execute(conn, "SELECT project FROM records WHERE id='logistic-map/phase1'")
+    for r in DBInterface.execute(
+        conn, "SELECT project FROM records WHERE id='logistic-map/phase1'"
+    )
         proj = r.project
     end
     @test proj == "logistic-map"                      # records.project is the CANONICAL slug, not "Logistic Map"
@@ -133,7 +145,8 @@ end
     for r in DBInterface.execute(conn2, "SELECT count(*) AS c FROM projects")
         pcount = r.c
     end
-    for r in DBInterface.execute(conn2, "SELECT para FROM projects WHERE name='logistic-map'")
+    for r in
+        DBInterface.execute(conn2, "SELECT para FROM projects WHERE name='logistic-map'")
         ppara = r.para
     end
     for r in DBInterface.execute(conn2, "SELECT count(*) AS c FROM records")

@@ -48,8 +48,9 @@ function _run_lftp(script::AbstractString)
 end
 
 # remote path of a file under the docroot: absolute as-is, else joined to the FTPS remote_dir.
-_ftps_remote(t::FTPSTransport, rel::AbstractString) =
-    startswith(rel, "/") ? String(rel) : rstrip(t.target.remote_dir, '/') * "/" * rel
+function _ftps_remote(t::FTPSTransport, rel::AbstractString)
+    return startswith(rel, "/") ? String(rel) : rstrip(t.target.remote_dir, '/') * "/" * rel
+end
 
 function pull_file(t::FTPSTransport, rel::AbstractString, dest::AbstractString)
     remote = _ftps_remote(t, rel)
@@ -60,8 +61,9 @@ function pull_file(t::FTPSTransport, rel::AbstractString, dest::AbstractString)
     return dest
 end
 
-push_dir(t::FTPSTransport, dir::AbstractString; delete::Bool=true) =
-    (_run_lftp(_lftp_script(t.target, dir; delete=delete)); true)
+function push_dir(t::FTPSTransport, dir::AbstractString; delete::Bool=true)
+    return (_run_lftp(_lftp_script(t.target, dir; delete=delete)); true)
+end
 
 # ===================== config resolution (kind-dispatched) =====================
 """
@@ -136,7 +138,8 @@ function publish(
         @info "publish: pulled the live registry DB (annotations preserved)" db
     catch e
         e isa InterruptException && rethrow()
-        @warn "publish: could not pull a remote DB (first publish?) — ingesting fresh" exception = e
+        @warn "publish: could not pull a remote DB (first publish?) — ingesting fresh" exception =
+            e
     end
     res = ingest(
         doc;
