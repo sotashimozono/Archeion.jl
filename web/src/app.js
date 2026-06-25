@@ -10,7 +10,7 @@ import {
   notesForDisplay, allNotesForDisplay, noteForDisplay, getNote, addNote, updateNote, removeNote, setPinned, setNoteArchived, setNoteTags, noteComments, addNoteComment,
   parseMentions, resolveMentions, parseEmbeds, resolveEmbeds,
   projectContext, contextMarkdown, setTodoDone,
-  getAccount, getAccountById, countAccounts, listAccounts, createAccount, inviteAccount, revokePassword, setPassword, verifyLogin, verifyPassword, deleteAccount, ensureTrustedAdmin,
+  getAccount, getAccountById, getByInviteToken, countAccounts, listAccounts, createAccount, inviteAccount, revokePassword, setPassword, verifyLogin, verifyPassword, deleteAccount, ensureTrustedAdmin,
 } from "./db.js";
 import * as V from "./render.js";
 import { SESSION_COOKIE, sessionSecret, makeToken, verifyToken, parseCookies, setSessionCookie, clearSessionCookie } from "./auth.js";
@@ -96,7 +96,22 @@ export function createApp(dbPath) {
       }
       return html(V.renderLogin());
     }
-    // first sign-in of an invited account: the USER sets their own password (admin never did)
+    // invite link: /invite/<token> → set your own password (no username needed), then signed in
+    if (path.startsWith("/invite/")) {
+      if (me) return redirect("/");
+      const tok = decodeURIComponent(path.slice(8));
+      const acc = getByInviteToken(db, tok);
+      if (!acc || acc.pw_hash) return html(V.renderLogin("That invite link is invalid or already used."), 410);
+      if (isPost) {
+        if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
+        const pass = body.get("password") || "";
+        if (pass.length < 8) return html(V.renderActivate(acc.name, { err: "Password must be ≥ 8 characters.", action: `/invite/${encodeURIComponent(tok)}`, token: tok }), 400);
+        setPassword(db, acc.id, pass, { mustChange: false }); // activates + consumes the token
+        return cookie("/", setSessionCookie(makeToken(acc.id, SECRET)));
+      }
+      return html(V.renderActivate(acc.name, { action: `/invite/${encodeURIComponent(tok)}`, token: tok }));
+    }
+    // first sign-in of an invited account via username (alternative to the link)
     if (path === "/activate") {
       if (me) return redirect("/");
       const name = (body.get("name") || query.get("name") || "").trim();
@@ -105,7 +120,7 @@ export function createApp(dbPath) {
       if (isPost) {
         if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
         const pass = body.get("password") || "";
-        if (pass.length < 8) return html(V.renderActivate(acc.name, "Password must be ≥ 8 characters."), 400);
+        if (pass.length < 8) return html(V.renderActivate(acc.name, { err: "Password must be ≥ 8 characters." }), 400);
         setPassword(db, acc.id, pass, { mustChange: false });
         return cookie("/", setSessionCookie(makeToken(acc.id, SECRET)));
       }

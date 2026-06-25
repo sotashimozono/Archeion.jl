@@ -261,6 +261,15 @@
     }
   });
 
+  // copy an invite link (admin user list): the absolute URL (origin + the /invite/<token> path)
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest(".copy-link");
+    if (!b) return;
+    e.preventDefault();
+    const url = location.origin + (b.dataset.path || "");
+    if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => { const t = b.textContent; b.textContent = "✓ copied"; setTimeout(() => { b.textContent = t; }, 1000); }).catch(() => {});
+  });
+
   // --- structure-note composer (only present on /compose) ---
   const cmp = document.querySelector(".cmp");
   if (cmp) {
@@ -296,5 +305,5 @@
 
   window.addEventListener("popstate", () => navSwap(location.href, false)); // back/forward → re-swap
   document.documentElement.classList.add("js"); // CSS then hides the now-redundant "set" buttons
-  console.log("[archeion] app.js loaded (v34 — notes: open view + comments, quick-note description)");
+  console.log("[archeion] app.js loaded (v37 — accounts/roles/invite links)");
 })();

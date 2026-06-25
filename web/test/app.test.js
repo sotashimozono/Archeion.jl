@@ -442,7 +442,8 @@ test("accounts: admin invites by name only; the user sets their own password on 
   assert.equal(POST(app, "/admin/useradd", { name: "advisor", role: "member" }, admin).status, 303);
   const list = GET(app, "/admin/users", admin).body;
   assert.match(list, /advisor/);
-  assert.match(list, /invited — awaiting/); // pending status
+  assert.match(list, /invited/); // pending status
+  assert.match(list, /href="\/invite\//); // …with an invite link
   // advisor signs in → detected pending → activation page (NOT logged in yet)
   const lg = POST(app, "/login", { name: "advisor", password: "anything" });
   assert.equal(lg.status, 200);
@@ -486,6 +487,27 @@ test("roles: members read + comment + bookmark; management is admin-only (server
   // /api/record carries the role for inject.js (the Pinax overlay)
   assert.match(GET(app, "/api/record/p/r1", admin).body, /"admin":true/);
   assert.match(GET(app, "/api/record/p/r1", g).body, /"admin":false/);
+});
+
+test("accounts: invite link — admin invites by name, the link lets the user set their own password", () => {
+  const app = setup();
+  const admin = ck(POST(app, "/setup", { name: "admin", password: "adminpass123" }));
+  POST(app, "/admin/useradd", { name: "advisor", role: "member" }, admin);
+  const link = GET(app, "/admin/users", admin).body.match(/href="(\/invite\/[^"]+)"/)[1];
+  assert.ok(link.startsWith("/invite/"));
+  // opening the link shows the activation form (no username needed)
+  const page = GET(app, link);
+  assert.equal(page.status, 200);
+  assert.match(page.body, /Welcome, advisor/);
+  // setting a password via the link → activated + signed in
+  const act = POST(app, link, { password: "advisorpass123" });
+  assert.equal(act.status, 303);
+  const ac = ck(act); assert.match(ac, /^arx_session=/);
+  assert.equal(GET(app, "/notes", ac).status, 200);
+  // the link is single-use (token consumed) → 410 afterwards
+  assert.equal(GET(app, link).status, 410);
+  // and the user can sign in normally with the password they chose
+  assert.equal(POST(app, "/login", { name: "advisor", password: "advisorpass123" }).status, 303);
 });
 
 test.after(() => {

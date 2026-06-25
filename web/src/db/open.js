@@ -44,7 +44,7 @@ export function openDb(path) {
       "must_change INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
   );
   // add-column migrations for older `users` tables (each ALTER throws if the column already exists)
-  for (const col of ["pw_hash TEXT", "role TEXT NOT NULL DEFAULT 'member'", "must_change INTEGER NOT NULL DEFAULT 0"])
+  for (const col of ["pw_hash TEXT", "role TEXT NOT NULL DEFAULT 'member'", "must_change INTEGER NOT NULL DEFAULT 0", "invite_token TEXT"])
     try { db.exec(`ALTER TABLE users ADD COLUMN ${col}`); } catch (_) { /* already there */ }
   return db;
 }

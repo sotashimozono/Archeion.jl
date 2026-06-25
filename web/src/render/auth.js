@@ -34,13 +34,16 @@ export function renderLogin(err) {
     </form>`);
 }
 
-// activation = a pending invite (admin set the name; no password yet) sets their OWN password
-export function renderActivate(name, err) {
+// activation = a pending invite (admin set the name; no password yet) sets their OWN password.
+// Reached by the invite link (/invite/<token>, token → no username needed) or by login with a
+// pending username (→ action "/activate" + hidden name).
+export function renderActivate(name, { err = null, action = "/activate", token = "" } = {}) {
+  const hidden = token ? "" : `<input type="hidden" name="name" value="${esc(name)}">`;
   return authShell("Set your password · Archeion", `<h2>Welcome, ${esc(name)}</h2>
-    <p class="muted">First sign-in — choose your own password to activate the account.</p>
+    <p class="muted">Choose your own password to activate your account.</p>
     ${errBox(err)}
-    <form method="post" action="/activate" class="auth-form">
-      <input type="hidden" name="name" value="${esc(name)}">
+    <form method="post" action="${esc(action)}" class="auth-form">
+      ${hidden}
       <label>New password <input name="password" type="password" autocomplete="new-password" required minlength="8" placeholder="≥ 8 characters" autofocus></label>
       <button>Set password &amp; sign in</button>
     </form>`);
@@ -65,13 +68,13 @@ export function renderAdminUsers(accounts, me, { projects = [], tags = [] } = {}
   const rows = accounts.map((a) => `<tr>
     <td>${esc(a.name)}${a.id === me.id ? ' <span class="muted">(you)</span>' : ""}</td>
     <td>${esc(a.role)}</td>
-    <td>${a.pending ? '<span class="muted">invited — awaiting first sign-in</span>' : "active"}</td>
+    <td>${a.pending ? `<span class="muted">invited</span> <a class="inv-link" href="/invite/${esc(a.invite_token)}">link</a> <button type="button" class="copy-link" data-path="/invite/${esc(a.invite_token)}">copy</button>` : "active"}</td>
     <td class="admin-acts">
       ${a.id === me.id ? "" : `<form method="post" action="/admin/userreset" class="inline" onsubmit="return confirm('Reset ${esc(a.name)}? They will choose a new password on next sign-in.')"><input type="hidden" name="id" value="${a.id}"><button${a.pending ? " disabled title='already pending'" : ""}>reset password</button></form>
       <form method="post" action="/admin/userdel" class="inline" onsubmit="return confirm('Delete ${esc(a.name)}?')"><input type="hidden" name="id" value="${a.id}"><button class="danger">delete</button></form>`}
     </td></tr>`).join("");
   const main = `<h2>Users <span class="muted">(${accounts.length})</span></h2>
-    <p class="muted">Invite a collaborator by <strong>username only</strong> — they set their own password on first sign-in (you never see it). "Reset" revokes the password so they re-set it. The shared Basic-auth gate is separate (one password for the whole site).</p>
+    <p class="muted">Invite a collaborator by <strong>username only</strong>, then send them the <strong>invite link</strong> (copy it from the row) — they open it and set their own password (you never see it). They'll also need the shared site password (Basic auth). "Reset" revokes the password and makes a fresh link.</p>
     <table class="admin-users"><thead><tr><th>user</th><th>role</th><th>status</th><th></th></tr></thead><tbody>${rows}</tbody></table>
     <h3>Invite user</h3>
     <form method="post" action="/admin/useradd" class="auth-form">

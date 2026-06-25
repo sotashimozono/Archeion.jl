@@ -34,21 +34,29 @@ export function getAccountById(db, id) {
 export function countAccounts(db) {
   return db.prepare("SELECT COUNT(*) c FROM users WHERE pw_hash IS NOT NULL").get().c;
 }
-// all accounts incl. pending invites (pw_hash IS NULL = invited, not yet activated by the user)
+const newToken = () => randomBytes(18).toString("base64url"); // URL-safe single-use invite token
+// all accounts incl. pending invites (pw_hash IS NULL = invited; invite_token drives the invite link)
 export function listAccounts(db) {
-  return db.prepare("SELECT id, name, display_name, role, (pw_hash IS NULL) AS pending, created_at FROM users ORDER BY role, name").all();
+  return db.prepare("SELECT id, name, display_name, role, (pw_hash IS NULL) AS pending, invite_token, created_at FROM users ORDER BY role, name").all();
 }
-// invite: admin sets only the name (+ role); the user sets their own password on first sign-in.
+export function getByInviteToken(db, token) {
+  if (!token) return null;
+  return db.prepare("SELECT id, name, display_name, pw_hash, role, invite_token FROM users WHERE invite_token = ?").get(String(token));
+}
+// invite: admin sets only the name (+ role) and gets a link; the user sets their own password.
 export function inviteAccount(db, name, role = "member") {
   name = norm(name);
   if (!name) return null;
+  const r = role === "admin" ? "admin" : "member";
+  const tok = newToken();
   const ex = getAccount(db, name);
-  if (ex) return ex.pw_hash ? null : ex.id; // active name → taken (null); pending → reuse the invite
-  return db.prepare("INSERT INTO users (name, role) VALUES (?,?)").run(name, role === "admin" ? "admin" : "member").lastInsertRowid;
+  if (ex && ex.pw_hash) return null; // active name → taken
+  if (ex) { db.prepare("UPDATE users SET role=?, invite_token=? WHERE id=?").run(r, tok, ex.id); return ex.id; }
+  return db.prepare("INSERT INTO users (name, role, invite_token) VALUES (?,?,?)").run(name, r, tok).lastInsertRowid;
 }
-// admin "reset" = revoke the password → account goes back to pending; the user re-sets it themselves.
+// admin "reset" = revoke the password → pending again + a fresh invite link; the user re-sets it.
 export function revokePassword(db, id) {
-  return db.prepare("UPDATE users SET pw_hash = NULL, must_change = 0 WHERE id = ?").run(id).changes;
+  return db.prepare("UPDATE users SET pw_hash = NULL, must_change = 0, invite_token = ? WHERE id = ?").run(newToken(), id).changes;
 }
 // create (or claim a legacy name-only row). Returns the id, or null if a real account already owns the name.
 export function createAccount(db, name, pass, { role = "member", mustChange = false, displayName = null } = {}) {
@@ -67,7 +75,8 @@ export function createAccount(db, name, pass, { role = "member", mustChange = fa
 }
 export function setPassword(db, id, pass, { mustChange = false } = {}) {
   if (!pass) return false;
-  db.prepare("UPDATE users SET pw_hash=?, must_change=? WHERE id=?").run(hashPassword(pass), mustChange ? 1 : 0, id);
+  // setting a password activates the account → consume any invite token
+  db.prepare("UPDATE users SET pw_hash=?, must_change=?, invite_token=NULL WHERE id=?").run(hashPassword(pass), mustChange ? 1 : 0, id);
   return true;
 }
 export function verifyLogin(db, name, pass) {
