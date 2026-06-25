@@ -324,9 +324,9 @@ test("notes page: pinned / all notes (+ filter) buckets; per-card date·edit·pi
 test("notes page: quick-add has a description field; markdown is signposted; composer button", () => {
   const app = setup();
   const body = get(app, "/notes").body;
-  assert.match(body, /class="note-add"[\s\S]*?name="description"/); // quick-add can set a description
+  assert.match(body, /class="note-add admin-only"[\s\S]*?name="description"/); // quick-add (admin-only) can set a description
   assert.match(body, /Notes are <strong>markdown<\/strong>/); // markdown is made explicit
-  assert.match(body, /class="make-sn" href="\/compose"[^>]*>✎ new in composer/); // the rich-composer entry
+  assert.match(body, /class="make-sn admin-only" href="\/compose"[^>]*>✎ new in composer/); // the rich-composer entry (admin-only)
 });
 
 test("notes: quick-add saves a description (round-trips to the open view + composer)", () => {
@@ -457,6 +457,30 @@ test("accounts: write routes require a session (no anonymous bookmarks)", () => 
   POST(app, "/setup", { name: "x", password: "xxxxxxxx12" }); // accounts now exist
   const r = POST(app, "/bookmark", { kind: "record", id: "p/r1" }); // no cookie
   assert.equal(r.status, 401);
+});
+
+test("roles: members read + comment + bookmark; management is admin-only (server gate + UI hide)", () => {
+  const app = setup();
+  const admin = ck(POST(app, "/setup", { name: "boss", password: "bosspass12345" }));
+  assert.match(GET(app, "/notes", admin).body, /<body[^>]*data-role="admin"/); // admin body role
+  // add a member who then sets their own password
+  POST(app, "/admin/useradd", { name: "guest", password: "guesttemp1234", role: "member" }, admin);
+  const gl = ck(POST(app, "/login", { name: "guest", password: "guesttemp1234" }));
+  POST(app, "/account", { current: "guesttemp1234", password: "guestpass12345" }, gl);
+  const g = ck(POST(app, "/login", { name: "guest", password: "guestpass12345" }));
+  const notes = GET(app, "/notes", g);
+  assert.match(notes.body, /<body[^>]*data-role="member"/); // member body role (CSS hides .admin-only)
+  assert.match(notes.body, /class="[^"]*admin-only/); // controls are emitted (server) but CSS-hidden
+  // server enforcement: members can't manage / delete / compose
+  assert.equal(POST(app, "/notedel", { id: "1" }, g).status, 403);
+  assert.equal(POST(app, "/archive", { id: "p/r1", archived: "1" }, g).status, 403);
+  assert.match(GET(app, "/compose", g).headers.Location, /\/notes/);
+  // …but they CAN bookmark (personal) + comment (discussion)
+  assert.equal(POST(app, "/bookmark", { kind: "record", id: "p/r1" }, g).status, 303);
+  assert.equal(POST(app, "/r/p/r1/comment", { body_md: "advisor note" }, g).status, 303);
+  // /api/record carries the role for inject.js (the Pinax overlay)
+  assert.match(GET(app, "/api/record/p/r1", admin).body, /"admin":true/);
+  assert.match(GET(app, "/api/record/p/r1", g).body, /"admin":false/);
 });
 
 test.after(() => {

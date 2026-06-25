@@ -103,6 +103,7 @@ async function archeionOverlay() {
   // ===== PHASE 2: data (/api) — metaproperty panel (after the title) + Discussion =====
   let rec;
   try { rec = await (await fetch("/api/record/" + ridPath)).json(); } catch { return; }
+  const admin = !!rec.admin; // members see read-only meta + bookmark + discussion; admins get curation
 
   const top = document.createElement("div");
   top.className = "arx-top";
@@ -111,10 +112,10 @@ async function archeionOverlay() {
     `<div class="arx-props">` +
     `<div class="arx-row"><span class="arx-k">project</span><span class="arx-v"><a href="/p/${encodeURIComponent(rec.project)}">${esc(rec.project)}</a></span></div>` +
     `<div class="arx-row"><span class="arx-k">date</span><span class="arx-v">${esc((rec.date || "").slice(0, 10))}</span></div>` +
-    `<div class="arx-row"><span class="arx-k">importance</span><span class="arx-v arx-imp">${[1, 2, 3].map((n) => star(n, n <= rec.importance)).join("")}</span></div>` +
+    `<div class="arx-row"><span class="arx-k">importance</span><span class="arx-v arx-imp">${admin ? [1, 2, 3].map((n) => star(n, n <= rec.importance)).join("") : [1, 2, 3].map((n) => (n <= rec.importance ? "★" : "☆")).join("")}</span></div>` +
     `<div class="arx-row"><span class="arx-k">tags</span><span class="arx-v arx-tags"></span></div>` +
     (rec.runs && rec.runs.length ? `<div class="arx-row"><span class="arx-k">runs</span><span class="arx-v arx-runs">${rec.runs.map((r) => `<code>${esc(r.project)}/${esc(r.run)}</code>`).join(" ")}</span></div>` : "") +
-    `<div class="arx-row"><span class="arx-k"></span><span class="arx-v"><button class="arx-bk${rec.bookmarked ? " on" : ""}">${rec.bookmarked ? "★ bookmarked" : "☆ bookmark"}</button> <button class="arx-arch">${rec.archived ? "unarchive" : "archive"}</button></span></div>` +
+    `<div class="arx-row"><span class="arx-k"></span><span class="arx-v"><button class="arx-bk${rec.bookmarked ? " on" : ""}">${rec.bookmarked ? "★ bookmarked" : "☆ bookmark"}</button>${admin ? ` <button class="arx-arch">${rec.archived ? "unarchive" : "archive"}</button>` : ""}</span></div>` +
     `</div>`;
   const h1 = document.body.querySelector("h1"); // the run title
   if (h1) h1.insertAdjacentElement("afterend", top);
@@ -154,8 +155,12 @@ async function archeionOverlay() {
     inp.value = "";
     if (names.length) save("/tagadd", { id, tag: names.join(" ") });
   };
-  (rec.tags || []).forEach((t) => tagsWrap.appendChild(chip(t)));
-  tagsWrap.appendChild(addForm);
+  if (admin) {
+    (rec.tags || []).forEach((t) => tagsWrap.appendChild(chip(t)));
+    tagsWrap.appendChild(addForm);
+  } else { // read-only chips for members (no remove ×, no add form)
+    tagsWrap.innerHTML = (rec.tags || []).map((t) => `<a class="arx-chip" href="/?tag=${encodeURIComponent(t)}">#${esc(t)}</a>`).join("") || '<span class="arx-empty">—</span>';
+  }
 
   const bk = top.querySelector(".arx-bk");
   bk.onclick = () => {
@@ -164,7 +169,7 @@ async function archeionOverlay() {
     save("/bookmark", { kind: "record", id });
   };
   const arch = top.querySelector(".arx-arch");
-  arch.onclick = () => { rec.archived = !rec.archived; arch.textContent = rec.archived ? "unarchive" : "archive"; syncArch(); save("/archive", { id, archived: rec.archived ? 1 : 0 }); };
+  if (arch) arch.onclick = () => { rec.archived = !rec.archived; arch.textContent = rec.archived ? "unarchive" : "archive"; syncArch(); save("/archive", { id, archived: rec.archived ? 1 : 0 }); };
 
   const disc = document.createElement("section");
   disc.className = "arx-disc";

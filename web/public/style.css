@@ -38,6 +38,10 @@ body.sidebar-collapsed .side { width: 0; padding-left: 0; padding-right: 0; opac
   border-radius: 999px; background: var(--card); font: inherit; }
 .who { color: var(--muted); font-size: .85rem; }
 .who a { color: var(--accent); }
+/* role-based UI (UX only; the server-side gate is the real enforcement): guests/members don't see
+   admin/management controls. The handler sets <body data-role="admin|member">. */
+body[data-role="member"] .admin-only { display: none !important; }
+body[data-role="admin"] .member-only { display: none !important; }
 
 .wrap { display: flex; align-items: flex-start; }
 .side { width: 220px; flex: none; padding: 1rem .9rem; border-right: 1px solid var(--line);

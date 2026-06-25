@@ -39,7 +39,7 @@ export function renderRecord(rec, { figures, runs, comments, tags, bset, user, p
       (f) => `<figure class="figcard">
         <img loading="lazy" src="${esc(figUrl(f.thumbnail || f.path))}" alt="${esc(f.caption)}">
         <figcaption>${esc(f.caption)}
-          <form method="post" action="/figimportance" class="imp-set"><input type="hidden" name="id" value="${esc(f.id)}">
+          <form method="post" action="/figimportance" class="imp-set admin-only"><input type="hidden" name="id" value="${esc(f.id)}">
             ${impSelect("value", f.importance)}<button>set</button></form>
           <a class="dl" href="${esc(figUrl(f.path))}" download title="download">⤓</a>
           ${bookmarkForm("figure", f.id, bset)}</figcaption></figure>`,
@@ -55,8 +55,8 @@ export function renderRecord(rec, { figures, runs, comments, tags, bset, user, p
     <div class="meta"><a class="proj" href="/p/${rid(rec.project)}">${esc(rec.project)}</a>
       <span class="date">${esc((rec.date || "").slice(0, 10))}</span>
       ${bookmarkForm("record", rec.id, bset)}</div>
-    ${tagEditor(rec.id, tags)}
-    <section class="controls">
+    <span class="admin-only">${tagEditor(rec.id, tags)}</span>
+    <section class="controls admin-only">
       <form method="post" action="/importance" class="inline"><input type="hidden" name="id" value="${esc(rec.id)}">
         importance ${impSelect("value", rec.importance)}<button>set</button></form>
       <form method="post" action="/archive" class="inline"><input type="hidden" name="id" value="${esc(rec.id)}">
@@ -117,22 +117,22 @@ export function renderProject(project, { records, archived = [], figures, meta =
   const ptags = meta.tags || [];
   const todos = meta.todos || [];
   // --- the project meta property panel (Obsidian-style rows; project version of the record panel) ---
-  const paraSel = `<form method="post" action="/projectpara" class="inline"><input type="hidden" name="name" value="${id}">
+  const paraSel = `<span class="member-only">${esc(para)}</span><form method="post" action="/projectpara" class="inline admin-only"><input type="hidden" name="name" value="${id}">
     <select name="para">${PARA.map((b) => `<option${b === para ? " selected" : ""}>${b}</option>`).join("")}</select><button>set</button></form>`;
   const tagChips = ptags
     .map((t) => `<span class="ptag-chip"><a href="/?tag=${encodeURIComponent(t)}">#${esc(t)}</a>` +
-      `<form method="post" action="/ptagdel"><input type="hidden" name="name" value="${id}"><input type="hidden" name="tag" value="${esc(t)}"><button title="remove">×</button></form></span>`)
+      `<form method="post" action="/ptagdel" class="admin-only"><input type="hidden" name="name" value="${id}"><input type="hidden" name="tag" value="${esc(t)}"><button title="remove">×</button></form></span>`)
     .join("");
-  const tagAdd = `<form method="post" action="/ptagadd" class="ptag-add"><input type="hidden" name="name" value="${id}"><input name="tag" placeholder="+ tag" autocomplete="off"></form>`;
+  const tagAdd = `<form method="post" action="/ptagadd" class="ptag-add admin-only"><input type="hidden" name="name" value="${id}"><input name="tag" placeholder="+ tag" autocomplete="off"></form>`;
   const todoItems = todos
     .map((t) => `<div class="ptodo${t.done ? " done" : ""}" data-todo="${t.id}">` +
-      `<form method="post" action="/todotoggle"><input type="hidden" name="id" value="${t.id}"><button title="toggle" class="tg">${t.done ? "☑" : "☐"}</button></form>` +
+      `<form method="post" action="/todotoggle" class="admin-only"><input type="hidden" name="id" value="${t.id}"><button title="toggle" class="tg">${t.done ? "☑" : "☐"}</button></form>` +
       `<span class="ptodo-body">${esc(t.body)}</span>` +
-      `<form method="post" action="/tododel"><input type="hidden" name="id" value="${t.id}"><button title="delete" class="x">×</button></form></div>`)
+      `<form method="post" action="/tododel" class="admin-only"><input type="hidden" name="id" value="${t.id}"><button title="delete" class="x">×</button></form></div>`)
     .join("");
-  const todoAdd = `<form method="post" action="/todoadd" class="ptodo-add"><input type="hidden" name="name" value="${id}"><input name="body" placeholder="+ todo" autocomplete="off"><button>add</button></form>`;
+  const todoAdd = `<form method="post" action="/todoadd" class="ptodo-add admin-only"><input type="hidden" name="name" value="${id}"><input name="body" placeholder="+ todo" autocomplete="off"><button>add</button></form>`;
   const descHtml = description.trim() ? md.render(description) : '<span class="muted">—</span>';
-  const descEdit = `<details class="pdesc-edit"><summary>edit</summary><form method="post" action="/projectdesc" class="pdesc-form"><input type="hidden" name="name" value="${id}"><textarea name="description" rows="4" placeholder="markdown…">${esc(description)}</textarea><button>save</button></form></details>`;
+  const descEdit = `<details class="pdesc-edit admin-only"><summary>edit</summary><form method="post" action="/projectdesc" class="pdesc-form"><input type="hidden" name="name" value="${id}"><textarea name="description" rows="4" placeholder="markdown…">${esc(description)}</textarea><button>save</button></form></details>`;
   const row = (k, v) => `<div class="prop-row"><span class="prop-k">${k}</span><span class="prop-v">${v}</span></div>`;
   const pmeta = `<div class="pmeta">
     ${row("status", paraSel)}

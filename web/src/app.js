@@ -66,6 +66,8 @@ export function createApp(dbPath) {
     const uid = () => (me ? me.id : 0);
     const needSetup = countAccounts(db) === 0;
     const sb = () => ({ projects: projects(db), tags: allTags(db) }); // sidebar data for the logged-in auth pages
+    const role = me ? (me.role === "admin" ? "admin" : "member") : "";
+    const r = (() => {
 
     // ----- public auth routes (reachable without a session) -----
     if (path === "/setup") {
@@ -142,6 +144,10 @@ export function createApp(dbPath) {
 
     if (method === "POST") {
       if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
+      // members may only bookmark (personal) + comment (discussion); all management/destructive writes
+      // (notes, archive, importance, tags, projects, …) are admin-only. The UI also hides these.
+      if (me.role !== "admin" && !(path === "/bookmark" || path.endsWith("/comment")))
+        return { status: 403, type: "text/plain", body: "admins only" };
       if (path === "/bookmark") {
         toggleBookmark(db, uid(), body.get("kind") === "figure" ? "figure" : "record", body.get("id") || "");
         return ok(back(h, "/"));
@@ -290,6 +296,7 @@ export function createApp(dbPath) {
       tags: allTags(db),
       bset: bookmarkedSet(db, uid()),
       user: me ? me.display_name || me.name : "",
+      admin: !!me && me.role === "admin", // → <body data-role> → CSS hides .admin-only for members
     });
 
     if (path === "/") {
@@ -340,6 +347,7 @@ export function createApp(dbPath) {
       return html(V.renderNoteView(note, note ? noteComments(db, id) : [], side()), note ? 200 : 404);
     }
     if (path === "/compose") {
+      if (me.role !== "admin") return redirect("/notes"); // composing/editing notes is admin-only
       // the two-pane structure-note composer (pick figures/records to embed + markdown + live preview)
       const nid = query.get("id");
       const note = nid ? noteForDisplay(db, nid) : { scope: query.get("scope") || "", body_md: "", mentions: [], embeds: [] };
@@ -389,7 +397,7 @@ export function createApp(dbPath) {
         if (!rec) return { status: 404, type: "application/json; charset=utf-8", body: "{}" };
         const data = {
           id: rec.id, title: rec.title, project: rec.project, date: rec.date,
-          importance: rec.importance, archived: !!rec.archived,
+          importance: rec.importance, archived: !!rec.archived, admin: me.role === "admin",
           tags: recordTags(db, id), runs: recordRuns(db, id),
           bookmarked: bookmarkedSet(db, uid()).has("record:" + id),
           comments: recordComments(db, id).map((c) => ({
@@ -416,10 +424,17 @@ export function createApp(dbPath) {
           bset: s.bset,
           user: s.user,
           projects: s.projects,
+          admin: s.admin,
         }),
         rec ? 200 : 404,
       );
     }
     return html(V.renderRecord(null, side()), 404);
+    })();
+    // tag <body> with the role so CSS can hide .admin-only controls for members. The server-side gate
+    // above is the real enforcement; this is just UX (don't show guests buttons that would 403).
+    if (role && r && typeof r.body === "string" && (r.type || "").includes("html") && r.body.includes("<body"))
+      r.body = r.body.replace("<body", `<body data-role="${role}"`);
+    return r;
   };
 }
