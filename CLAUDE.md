@@ -12,7 +12,7 @@ See [`../CLAUDE.md`](../CLAUDE.md) for the whole workflow.
 | half | role | stack | where |
 | --- | --- | --- | --- |
 | `Archeion.jl` (Julia) | **`ingest`** Pinax artifacts (figures + provenance + `body_md`) → DB/figures; `build_index`; `deploy` | Julia | panza (build time) |
-| `Archeion.jl/web` (Node) | **serve** the registry + **write-back** (memos / discussion / tags / status / favorite) | Node | panza daemon *or* Lolipop CGI |
+| `Archeion.jl/web` (Node) | **serve** the registry + **write-back** (memos / discussion / tags / status / favorite) + a **Zettelkasten note layer** (notes · structure-note composer · advisor `/show` pages) | Node | panza daemon *or* Lolipop CGI |
 
 They meet at the **SQLite DB (`web/db/schema.sql`) + figures under `data/figures/`** — Julia writes,
 Node reads. Julia public API: `ingest`, `build_index`, `add_search`, `deploy`, `Record` /
@@ -62,8 +62,9 @@ Rules that keep this consistent:
 
 The same human↔LLM duality runs through Archeion:
 - **Human → the web app** (Node): browse, FTS5 search, pin / favorite / importance, memos &
-  discussion, tags / status, PARA & Zettelkasten. Where a human **confirms** a result; `deploy`
-  closes the loop.
+  discussion, tags / status, PARA & Zettelkasten **notes** (markdown with `[[record]]` mentions +
+  `![[figure]]` embeds; **pin** one → a curated advisor page at `/show/:id`). Where a human
+  **confirms** a result; `deploy` closes the loop.
 - **LLM → `body_md`** (RAG-portable, the source of truth): clean per-record Markdown, directly
   embeddable — so the registry doubles as the LLM loop's **memory** ("have we swept this before?"
   across all past runs).
@@ -71,9 +72,9 @@ The same human↔LLM duality runs through Archeion:
 ## Contracts that trip up callers — read this
 
 - **Content vs annotation split.** Content (figures, provenance, `body_md`, the runs it used) is
-  **immutable, ingest-owned**; annotation (memos, comments, tags, status, favorite) is **mutable,
-  app-owned**. **Re-ingest is idempotent and never touches annotations** — that split is what makes
-  re-running ingest safe.
+  **immutable, ingest-owned**; annotation (memos, comments, tags, status, favorite, **notes**) is
+  **mutable, app-owned**. **Re-ingest is idempotent and never touches annotations** — that split is
+  what makes re-running ingest safe.
 - **A `record` = one Pinax generation-source** (the parent render → one rendered artifact), **M:N**
   to DataVault `runs` (a record may compare/render 1+ runs). It is NOT a DataVault run.
 - **`body_md` is RAG-portable** — keep it clean per-record Markdown ("port the DB as-is"); the HTML
@@ -83,7 +84,7 @@ The same human↔LLM duality runs through Archeion:
 
 ## Where to look for usage
 
-- `web/README.md` — the two-halves split, the data contract, deploy (panza daemon / Lolipop CGI).
+- `web/README.md` — the two-halves split, the data contract, **the pages/routes + the note layer**, deploy (panza daemon / Lolipop CGI).
 - `notes/DB/DESIGN.md` (gitignored) — schema rationale (record/runs M:N, content/annotation, FTS).
 - `src/ingest.jl` / `src/deploy.jl` — the ingest + deploy seams; `web/db/schema.sql` — the contract.
 
