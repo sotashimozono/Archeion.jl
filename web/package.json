@@ -8,7 +8,8 @@
     "dev": "node --experimental-sqlite --watch src/server.js",
     "start": "node --experimental-sqlite src/server.js",
     "test": "node --experimental-sqlite --test",
-    "bundle": "esbuild src/cgi.js --bundle --minify --platform=node --format=esm --outfile=dist/cgi.js && esbuild editor/main.js --bundle --minify --format=iife --outfile=public/compose-editor.js"
+    "bundle": "esbuild src/cgi.js --bundle --minify --platform=node --format=esm --outfile=dist/cgi.js && esbuild editor/main.js --bundle --minify --format=iife --outfile=public/compose-editor.js",
+    "prepare": "npm run bundle"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
