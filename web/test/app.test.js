@@ -568,6 +568,30 @@ test("notes: note→note + project mentions (graph edges) — links out + backli
   assert.match(get(app, "/note/" + a).body, new RegExp(`href="/note/${c}"`)); // Gamma is also a backlink
 });
 
+test("graph: /api/graph nodes+edges from mentions/embeds/scope; /graph page renders", () => {
+  const app = setup();
+  // a global note embedding the seeded record p/r1 and mentioning its project
+  const a = post(app, "/noteadd", { title: "Alpha", body: "![[p/r1]] in [[proj]]", pinned: "1", from: "compose" }).headers.Location.match(/id=(\d+)/)[1];
+  // a project-scoped note that links to Alpha (note→note edge) — scope gives an implicit note→project edge
+  const b = post(app, "/noteadd", { scope: "proj", title: "Beta", body: `builds on [[note:${a}]]`, from: "compose" }).headers.Location.match(/id=(\d+)/)[1];
+  const g = JSON.parse(get(app, "/api/graph").body);
+  const ids = new Set(g.nodes.map((n) => n.id));
+  assert.ok(ids.has(`note:${a}`) && ids.has(`note:${b}`)); // both notes are nodes
+  assert.ok(ids.has("proj:proj"));                          // project node
+  assert.ok(ids.has("rec:p/r1"));                           // the embedded record was pulled in
+  const has = (s, t) => g.edges.some((e) => e.source === s && e.target === t);
+  assert.ok(has(`note:${a}`, "rec:p/r1"));   // embed edge
+  assert.ok(has(`note:${a}`, "proj:proj"));  // mention edge
+  assert.ok(has(`note:${b}`, `note:${a}`));  // note→note edge
+  assert.ok(has(`note:${b}`, "proj:proj"));  // implicit scope edge
+  assert.ok(has("rec:p/r1", "proj:proj"));   // record→its project
+  const r = get(app, "/graph");
+  assert.equal(r.status, 200);
+  assert.match(r.body, /id="graph"/);            // the canvas
+  assert.match(r.body, /\/graph\.js\?v=/);       // the client
+  assert.match(r.body, /🕸 Graph/);              // sidebar nav link present
+});
+
 test.after(() => {
   for (const s of ["", "-wal", "-shm"]) rmSync(dbPath + s, { force: true });
 });

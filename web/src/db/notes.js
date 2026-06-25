@@ -180,6 +180,47 @@ export function setNoteArchived(db, id, on) {
   return true;
 }
 
+// the whole link graph for /graph: notes (primary) + the projects/records they connect to. Edges
+// come from the SAME [[mention]] / ![[embed]] data the Related panel uses, plus two implicit edges:
+// note→project (a note's scope) and record→project (a record belongs to a project). Node ids are
+// type-prefixed (note:<id> / proj:<name> / rec:<id>) so the three id spaces never collide. Records
+// appear only when a note references them (an unreferenced record would float disconnected).
+export function graphData(db) {
+  const nodes = new Map(), edges = [], eseen = new Set();
+  const put = (id, type, label, ref, extra = {}) => { if (!nodes.has(id)) nodes.set(id, { id, type, label, ref, ...extra }); return id; };
+  const link = (s, t, kind) => {
+    if (!s || !t || s === t) return;
+    const k = `${s}|${t}`; if (eseen.has(k)) return; eseen.add(k);
+    edges.push({ source: s, target: t, kind });
+  };
+  const proj = (name) => put(`proj:${name}`, "project", name, `/p/${encodeURIComponent(name)}`);
+  const rec = (id) => {
+    const key = `rec:${id}`;
+    if (!nodes.has(key)) {
+      const r = db.prepare("SELECT id, title, project FROM records WHERE id = ?").get(id);
+      if (!r) return null;
+      put(key, "record", r.title || r.id, `/r/${encodeURIComponent(r.id)}`, { project: r.project || "" });
+    }
+    return key;
+  };
+  for (const p of db.prepare("SELECT name FROM projects ORDER BY name").all()) proj(p.name);
+  for (const n of db.prepare("SELECT id, title, scope, body_md, pinned FROM notes").all()) {
+    const nid = put(`note:${n.id}`, "note", n.title || `note ${n.id}`, `/note/${n.id}`, { pinned: !!n.pinned });
+    if (n.scope) link(nid, proj(n.scope), "scope");
+    for (const m of resolveMentions(db, parseMentions(n.body_md))) {
+      if (m.kind === "note") link(nid, `note:${m.id}`, "note");
+      else if (m.kind === "project") link(nid, proj(m.target), "mention");
+      else if (m.kind === "record") { const rk = rec(m.target); if (rk) link(nid, rk, "mention"); }
+    }
+    for (const e of resolveEmbeds(db, parseEmbeds(n.body_md))) {
+      const id = e.kind === "figure" ? e.record : (e.record && e.record.id); // figure → record id string; section/record → {id}
+      if (id) { const rk = rec(id); if (rk) link(nid, rk, "embed"); }
+    }
+  }
+  for (const node of [...nodes.values()]) if (node.type === "record" && node.project) link(node.id, proj(node.project), "in");
+  return { nodes: [...nodes.values()].map(({ project, ...n }) => n), edges }; // strip the internal record.project
+}
+
 // backlinks: notes that mention a given target (project name or record id)
 export function notesMentioning(db, target, { limit = 100 } = {}) {
   return db

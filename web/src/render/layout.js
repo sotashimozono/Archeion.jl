@@ -18,6 +18,7 @@ export function sideNav({ projects = [], tags = [] } = {}) {
   return `<nav class="side">
   <a class="navitem" href="/gallery">🖼 Figures</a>
   <a class="navitem" href="/notes">📝 Notes</a>
+  <a class="navitem" href="/graph">🕸 Graph</a>
   <a class="navitem" href="/bookmarks">★ Bookmarks</a>
   <a class="navitem" href="/archived">🗄 Archived</a>
   ${paraSections}

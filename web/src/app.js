@@ -8,7 +8,7 @@ import {
   ensureUser, setRecordImportance, setFigureImportance, setArchived, toggleBookmark,
   bookmarkedSet, userBookmarks, addComment, addTag, removeTag,
   notesForDisplay, allNotesForDisplay, noteForDisplay, getNote, addNote, updateNote, removeNote, setPinned, setNoteArchived, setNoteTags, noteComments, addNoteComment,
-  addNoteAnnotation, noteAnnotations, getNoteAnnotation, removeNoteAnnotation, relatedNotes,
+  addNoteAnnotation, noteAnnotations, getNoteAnnotation, removeNoteAnnotation, relatedNotes, graphData,
   parseMentions, resolveMentions, parseEmbeds, resolveEmbeds,
   projectContext, contextMarkdown, setTodoDone,
   getAccount, getAccountById, getByInviteToken, countAccounts, listAccounts, createAccount, inviteAccount, revokePassword, setPassword, verifyLogin, verifyPassword, deleteAccount, ensureTrustedAdmin,
@@ -386,6 +386,11 @@ export function createApp(dbPath) {
     if (path === "/notes") {
       return html(V.renderNotes(allNotesForDisplay(db), side()));
     }
+    if (path === "/graph") {
+      // the link graph: notes (primary) + the projects/records they reference, drawn from the same
+      // [[mention]]/![[embed]] data as the per-note Related panel. Read-only; both roles may view.
+      return html(V.renderGraph(side()));
+    }
     if (path.startsWith("/show/")) {
       // the advisor-facing view of a pinned structure note: home-style header + sidebar/hamburger menu
       const note = noteForDisplay(db, decodeURIComponent(path.slice(6)));
@@ -439,6 +444,7 @@ export function createApp(dbPath) {
         return json(ctx);
       }
     }
+    if (path === "/api/graph") return json(graphData(db)); // {nodes,edges} for the /graph canvas
     {
       // JSON for inject.js (the overlay on a Pinax page): record meta + tags + runs + bookmark + comments
       const m = path.match(/^\/api\/record\/(.+)$/);
