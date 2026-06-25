@@ -435,21 +435,28 @@ test("accounts: first-run setup → home gated → wrong/right login → self-se
   assert.equal(POST(app, "/login", { name: "sota", password: "newpass123456" }).status, 303);
 });
 
-test("accounts: admin adds a member with a temp password → forced change; members can't reach /admin", () => {
+test("accounts: admin invites by name only; the user sets their own password on first sign-in", () => {
   const app = setup();
   const admin = ck(POST(app, "/setup", { name: "admin", password: "adminpass123" }));
-  // admin adds a member (temp pw, must change)
-  assert.equal(POST(app, "/admin/useradd", { name: "advisor", password: "temppass123", role: "member" }, admin).status, 303);
-  assert.match(GET(app, "/admin/users", admin).body, /advisor/);
-  // advisor signs in → forced to /account (must_change)
-  const lg = POST(app, "/login", { name: "advisor", password: "temppass123" });
-  assert.equal(lg.status, 303); assert.match(lg.headers.Location, /\/account/);
-  const ac = ck(lg);
-  assert.match(GET(app, "/notes", ac).headers.Location, /\/account/); // must_change bounces everything to /account
-  // change the temp password → must_change cleared, normal access resumes
-  assert.equal(POST(app, "/account", { current: "temppass123", password: "advisorpass123" }, ac).status, 200);
-  assert.equal(GET(app, "/notes", ac).status, 200);
-  assert.equal(GET(app, "/admin/users", ac).status, 403); // …but a member still can't manage users
+  // invite by NAME only — no password set by the admin
+  assert.equal(POST(app, "/admin/useradd", { name: "advisor", role: "member" }, admin).status, 303);
+  const list = GET(app, "/admin/users", admin).body;
+  assert.match(list, /advisor/);
+  assert.match(list, /invited — awaiting/); // pending status
+  // advisor signs in → detected pending → activation page (NOT logged in yet)
+  const lg = POST(app, "/login", { name: "advisor", password: "anything" });
+  assert.equal(lg.status, 200);
+  assert.match(lg.body, /Set your password/);
+  assert.ok(!lg.headers?.["Set-Cookie"]);
+  // activate with their OWN password → signed in
+  const act = POST(app, "/activate", { name: "advisor", password: "advisorpass123" });
+  assert.equal(act.status, 303);
+  const ac = ck(act); assert.match(ac, /^arx_session=/);
+  assert.equal(GET(app, "/notes", ac).status, 200); // now in
+  assert.equal(GET(app, "/admin/users", ac).status, 403); // member can't manage
+  // re-login with the chosen password works (pending cleared); a non-existent name still fails
+  assert.equal(POST(app, "/login", { name: "advisor", password: "advisorpass123" }).status, 303);
+  assert.equal(POST(app, "/login", { name: "nobody", password: "whatever123" }).status, 401);
 });
 
 test("accounts: write routes require a session (no anonymous bookmarks)", () => {
@@ -464,10 +471,8 @@ test("roles: members read + comment + bookmark; management is admin-only (server
   const admin = ck(POST(app, "/setup", { name: "boss", password: "bosspass12345" }));
   assert.match(GET(app, "/notes", admin).body, /<body[^>]*data-role="admin"/); // admin body role
   // add a member who then sets their own password
-  POST(app, "/admin/useradd", { name: "guest", password: "guesttemp1234", role: "member" }, admin);
-  const gl = ck(POST(app, "/login", { name: "guest", password: "guesttemp1234" }));
-  POST(app, "/account", { current: "guesttemp1234", password: "guestpass12345" }, gl);
-  const g = ck(POST(app, "/login", { name: "guest", password: "guestpass12345" }));
+  POST(app, "/admin/useradd", { name: "guest", role: "member" }, admin); // invite by name
+  const g = ck(POST(app, "/activate", { name: "guest", password: "guestpass12345" })); // user sets own pw
   const notes = GET(app, "/notes", g);
   assert.match(notes.body, /<body[^>]*data-role="member"/); // member body role (CSS hides .admin-only)
   assert.match(notes.body, /class="[^"]*admin-only/); // controls are emitted (server) but CSS-hidden

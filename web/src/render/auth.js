@@ -34,6 +34,18 @@ export function renderLogin(err) {
     </form>`);
 }
 
+// activation = a pending invite (admin set the name; no password yet) sets their OWN password
+export function renderActivate(name, err) {
+  return authShell("Set your password · Archeion", `<h2>Welcome, ${esc(name)}</h2>
+    <p class="muted">First sign-in — choose your own password to activate the account.</p>
+    ${errBox(err)}
+    <form method="post" action="/activate" class="auth-form">
+      <input type="hidden" name="name" value="${esc(name)}">
+      <label>New password <input name="password" type="password" autocomplete="new-password" required minlength="8" placeholder="≥ 8 characters" autofocus></label>
+      <button>Set password &amp; sign in</button>
+    </form>`);
+}
+
 // account = self-service password change (+ admin gets a link to user management)
 export function renderAccount(me, err, ok, { projects = [], tags = [] } = {}) {
   const adminLink = me.role === "admin" ? `<p><a href="/admin/users">Manage users →</a></p>` : "";
@@ -53,20 +65,19 @@ export function renderAdminUsers(accounts, me, { projects = [], tags = [] } = {}
   const rows = accounts.map((a) => `<tr>
     <td>${esc(a.name)}${a.id === me.id ? ' <span class="muted">(you)</span>' : ""}</td>
     <td>${esc(a.role)}</td>
-    <td>${a.must_change ? '<span class="muted">temp pw — must change</span>' : ""}</td>
+    <td>${a.pending ? '<span class="muted">invited — awaiting first sign-in</span>' : "active"}</td>
     <td class="admin-acts">
-      <form method="post" action="/admin/userreset" class="inline"><input type="hidden" name="id" value="${a.id}"><input name="password" type="password" placeholder="new temp pw (≥8)" minlength="8" required><button>reset</button></form>
-      ${a.id === me.id ? "" : `<form method="post" action="/admin/userdel" class="inline" onsubmit="return confirm('Delete ${esc(a.name)}?')"><input type="hidden" name="id" value="${a.id}"><button class="danger">delete</button></form>`}
+      ${a.id === me.id ? "" : `<form method="post" action="/admin/userreset" class="inline" onsubmit="return confirm('Reset ${esc(a.name)}? They will choose a new password on next sign-in.')"><input type="hidden" name="id" value="${a.id}"><button${a.pending ? " disabled title='already pending'" : ""}>reset password</button></form>
+      <form method="post" action="/admin/userdel" class="inline" onsubmit="return confirm('Delete ${esc(a.name)}?')"><input type="hidden" name="id" value="${a.id}"><button class="danger">delete</button></form>`}
     </td></tr>`).join("");
   const main = `<h2>Users <span class="muted">(${accounts.length})</span></h2>
-    <p class="muted">Add collaborators with a temporary password; they set their own on first sign-in. The shared Basic-auth gate is separate (one password for the whole site).</p>
+    <p class="muted">Invite a collaborator by <strong>username only</strong> — they set their own password on first sign-in (you never see it). "Reset" revokes the password so they re-set it. The shared Basic-auth gate is separate (one password for the whole site).</p>
     <table class="admin-users"><thead><tr><th>user</th><th>role</th><th>status</th><th></th></tr></thead><tbody>${rows}</tbody></table>
-    <h3>Add user</h3>
+    <h3>Invite user</h3>
     <form method="post" action="/admin/useradd" class="auth-form">
-      <label>Username <input name="name" required></label>
-      <label>Temporary password <input name="password" type="password" required minlength="8" placeholder="≥ 8 characters"></label>
+      <label>Username <input name="name" required autocomplete="off"></label>
       <label>Role <select name="role"><option value="member">member</option><option value="admin">admin</option></select></label>
-      <button>Add user</button>
+      <button>Invite</button>
     </form>`;
   return layout("Users", main, { user: me.display_name || me.name, projects, tags });
 }

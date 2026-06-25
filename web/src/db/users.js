@@ -34,8 +34,21 @@ export function getAccountById(db, id) {
 export function countAccounts(db) {
   return db.prepare("SELECT COUNT(*) c FROM users WHERE pw_hash IS NOT NULL").get().c;
 }
+// all accounts incl. pending invites (pw_hash IS NULL = invited, not yet activated by the user)
 export function listAccounts(db) {
-  return db.prepare("SELECT id, name, display_name, role, must_change, created_at FROM users WHERE pw_hash IS NOT NULL ORDER BY role, name").all();
+  return db.prepare("SELECT id, name, display_name, role, (pw_hash IS NULL) AS pending, created_at FROM users ORDER BY role, name").all();
+}
+// invite: admin sets only the name (+ role); the user sets their own password on first sign-in.
+export function inviteAccount(db, name, role = "member") {
+  name = norm(name);
+  if (!name) return null;
+  const ex = getAccount(db, name);
+  if (ex) return ex.pw_hash ? null : ex.id; // active name → taken (null); pending → reuse the invite
+  return db.prepare("INSERT INTO users (name, role) VALUES (?,?)").run(name, role === "admin" ? "admin" : "member").lastInsertRowid;
+}
+// admin "reset" = revoke the password → account goes back to pending; the user re-sets it themselves.
+export function revokePassword(db, id) {
+  return db.prepare("UPDATE users SET pw_hash = NULL, must_change = 0 WHERE id = ?").run(id).changes;
 }
 // create (or claim a legacy name-only row). Returns the id, or null if a real account already owns the name.
 export function createAccount(db, name, pass, { role = "member", mustChange = false, displayName = null } = {}) {

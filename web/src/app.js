@@ -10,7 +10,7 @@ import {
   notesForDisplay, allNotesForDisplay, noteForDisplay, getNote, addNote, updateNote, removeNote, setPinned, setNoteArchived, setNoteTags, noteComments, addNoteComment,
   parseMentions, resolveMentions, parseEmbeds, resolveEmbeds,
   projectContext, contextMarkdown, setTodoDone,
-  getAccountById, countAccounts, listAccounts, createAccount, setPassword, verifyLogin, verifyPassword, deleteAccount, ensureTrustedAdmin,
+  getAccount, getAccountById, countAccounts, listAccounts, createAccount, inviteAccount, revokePassword, setPassword, verifyLogin, verifyPassword, deleteAccount, ensureTrustedAdmin,
 } from "./db.js";
 import * as V from "./render.js";
 import { SESSION_COOKIE, sessionSecret, makeToken, verifyToken, parseCookies, setSessionCookie, clearSessionCookie } from "./auth.js";
@@ -87,11 +87,29 @@ export function createApp(dbPath) {
       if (me) return redirect("/");
       if (isPost) {
         if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
-        const u = verifyLogin(db, (body.get("name") || "").trim(), body.get("password") || "");
+        const name = (body.get("name") || "").trim();
+        const acc = getAccount(db, name);
+        if (acc && !acc.pw_hash) return html(V.renderActivate(acc.name)); // invited (pending) → set own password
+        const u = verifyLogin(db, name, body.get("password") || "");
         if (!u) return html(V.renderLogin("Wrong username or password."), 401);
-        return cookie(u.must_change ? "/account" : "/", setSessionCookie(makeToken(u.id, SECRET)));
+        return cookie("/", setSessionCookie(makeToken(u.id, SECRET)));
       }
       return html(V.renderLogin());
+    }
+    // first sign-in of an invited account: the USER sets their own password (admin never did)
+    if (path === "/activate") {
+      if (me) return redirect("/");
+      const name = (body.get("name") || query.get("name") || "").trim();
+      const acc = getAccount(db, name);
+      if (!acc || acc.pw_hash) return redirect("/login"); // unknown or already activated
+      if (isPost) {
+        if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
+        const pass = body.get("password") || "";
+        if (pass.length < 8) return html(V.renderActivate(acc.name, "Password must be ≥ 8 characters."), 400);
+        setPassword(db, acc.id, pass, { mustChange: false });
+        return cookie("/", setSessionCookie(makeToken(acc.id, SECRET)));
+      }
+      return html(V.renderActivate(acc.name));
     }
     if (path === "/logout") return cookie("/login", clearSessionCookie());
 
@@ -123,13 +141,14 @@ export function createApp(dbPath) {
       if (isPost) {
         if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
         if (path === "/admin/useradd") {
-          const name = (body.get("name") || "").trim(), pass = body.get("password") || "";
-          if (name && pass.length >= 8) createAccount(db, name, pass, { role: body.get("role") === "admin" ? "admin" : "member", mustChange: true });
+          // invite by name only — the user sets their own password on first sign-in
+          const name = (body.get("name") || "").trim();
+          if (name) inviteAccount(db, name, body.get("role") === "admin" ? "admin" : "member");
           return redirect("/admin/users");
         }
         if (path === "/admin/userreset") {
-          const id = +body.get("id"), pass = body.get("password") || "";
-          if (id && pass.length >= 8) setPassword(db, id, pass, { mustChange: true });
+          const id = +body.get("id"); // revoke the password → back to pending; the user re-sets it
+          if (id && id !== me.id) revokePassword(db, id);
           return redirect("/admin/users");
         }
         if (path === "/admin/userdel") {
