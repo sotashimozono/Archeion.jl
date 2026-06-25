@@ -69,21 +69,22 @@ function noteCard(n, showScope) {
   // top-right tools, left→right: (date) · edit · archive · pin
   const tools = `<span class="note-tools">` +
     `<span class="note-when muted" title="last edited">${esc((n.updated_at || "").slice(0, 10))}</span>` +
+    `<span class="admin-only">` + // edit / archive / pin — managers only (members just read + open ↗)
     `<a class="note-edit-link" href="/compose?id=${n.id}" title="edit in the composer">✎ edit</a>` +
     `<form method="post" action="/notearchive" class="note-arch"><input type="hidden" name="id" value="${n.id}"><input type="hidden" name="archived" value="${n.archived ? 0 : 1}"><button title="${n.archived ? "restore to active notes" : "archive — hide from active (kept in search)"}">${n.archived ? "🗄 unarchive" : "🗄 archive"}</button></form>` +
     `<form method="post" action="/notepin" class="note-pin"><input type="hidden" name="id" value="${n.id}"><input type="hidden" name="pinned" value="${n.pinned ? 0 : 1}"><button title="${n.pinned ? "unpin" : "pin as a structure note (advisor page)"}">${n.pinned ? "📌 unpin" : "📌 pin"}</button></form>` +
-    `</span>`;
+    `</span></span>`;
   return `<div class="note${n.pinned ? " pinned" : ""}${n.archived ? " archived" : ""}" data-note="${n.id}">
     <div class="note-head"><span class="note-headl">${n.pinned ? '<span class="pin-on" title="structure note">📌</span> ' : ""}${title}${imp}${tags}${scope}${open}${preview}</span>${tools}</div>
     ${(n.description || "").trim() ? `<div class="note-desc muted">${esc(n.description)}</div>` : ""}
     <div class="md note-body">${noteBodyHtml(n)}</div>
-    <div class="note-foot">
+    <div class="note-foot admin-only">
       <form method="post" action="/notedel" class="note-del"><input type="hidden" name="id" value="${n.id}"><button title="delete note">×</button></form>
     </div></div>`;
 }
 export function notesBlock(scope, notes, { showScope = false } = {}) {
   const items = notes.map((n) => noteCard(n, showScope)).join("") || `<p class="empty">No notes yet.</p>`;
-  const add = `<form method="post" action="/noteadd" class="note-add"><input type="hidden" name="scope" value="${esc(scope)}">
+  const add = `<form method="post" action="/noteadd" class="note-add admin-only"><input type="hidden" name="scope" value="${esc(scope)}">
     <input name="title" placeholder="title (optional)" autocomplete="off">
     <textarea name="body" rows="3" placeholder="note (markdown; [[project]]/[[record-id]] to link, ![[figure-id]] to embed)…" required></textarea>
     <div class="note-actions"><button>add note</button></div></form>`;
@@ -105,7 +106,7 @@ export function renderNotes(notes, { projects, tags, user }) {
 
   // quick-add: a fast markdown jot (title + description + body). The rich path (embed figures/sections,
   // live preview, pin as an advisor page) is the composer — "✎ new in composer" in the heading.
-  const addForm = `<form method="post" action="/noteadd" class="note-add"><input type="hidden" name="scope" value="">
+  const addForm = `<form method="post" action="/noteadd" class="note-add admin-only"><input type="hidden" name="scope" value="">
     <div class="note-add-head">quick note <span class="muted">— a fast markdown jot; ✎ edit opens it in the full composer later</span></div>
     <input name="title" placeholder="title (optional)" autocomplete="off">
     <input name="description" placeholder="description (optional) — short one-line summary, markdown" autocomplete="off">
@@ -121,7 +122,7 @@ export function renderNotes(notes, { projects, tags, user }) {
     ? `<details class="archived-sec"><summary>🗄 archived (${archived.length})</summary>${cards(archived)}</details>`
     : "";
 
-  const main = `<h2>📝 Notes <a class="make-sn" href="/compose" title="rich composer — embed figures/sections, live preview, then pin as an advisor page">✎ new in composer</a></h2>
+  const main = `<h2>📝 Notes <a class="make-sn admin-only" href="/compose" title="rich composer — embed figures/sections, live preview, then pin as an advisor page">✎ new in composer</a></h2>
     <p class="muted">Notes are <strong>markdown</strong> (<code>[[project]]</code>/<code>[[record-id]]</code> links, <code>![[figure-id]]</code> embeds, <code>$math$</code>). Two ways to write: the <strong>composer</strong> (rich — embeds + live preview; the way to build a <strong>pinned</strong> advisor page at <code>/show/:id</code>) or a <strong>quick note</strong> below. <strong>open ↗</strong> any note to read &amp; comment.</p>
     ${pinnedBlock}
     ${allBlock}
@@ -162,7 +163,7 @@ export function renderNoteView(note, comments = [], { projects = [], tags = [], 
     `<a class="nv-btn" href="/compose?id=${note.id}" title="edit in the composer">✎ edit</a>` +
     (note.pinned ? `<a class="nv-btn" href="/show/${note.id}" title="clean advisor page">advisor view ↗</a>` : "") +
     `<a class="nv-btn" href="/notes">← all notes</a></div>`;
-  const cItem = (c) => `<div class="nv-comment"><div class="nv-cmeta muted">${esc(c.author || "anon")} · ${esc((c.created_at || "").slice(0, 16))}</div><div class="md nv-cbody">${md.render(c.body_md || "")}</div></div>`;
+  const cItem = (c) => `<div class="nv-comment" data-cid="${c.id}"><div class="nv-cmeta muted">${esc(c.author || "anon")} · ${esc((c.created_at || "").slice(0, 16))}</div><div class="md nv-cbody">${md.render(c.body_md || "")}</div></div>`;
   const disc = `<section class="nv-disc"><h2>Comments &amp; annotations <span class="muted">(${comments.length})</span></h2>` +
     `<div class="nv-comments">${comments.length ? comments.map(cItem).join("") : `<p class="empty">No comments yet — add one below.</p>`}</div>` +
     `<form method="post" action="/note/${note.id}/comment" class="nv-cform"><textarea name="body_md" rows="3" required placeholder="comment / annotation (markdown)…"></textarea><div class="note-actions"><button>add comment</button></div></form></section>`;

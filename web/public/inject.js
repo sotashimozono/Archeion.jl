@@ -103,6 +103,7 @@ async function archeionOverlay() {
   // ===== PHASE 2: data (/api) — metaproperty panel (after the title) + Discussion =====
   let rec;
   try { rec = await (await fetch("/api/record/" + ridPath)).json(); } catch { return; }
+  const admin = !!rec.admin; // members see read-only meta + bookmark + discussion; admins get curation
 
   const top = document.createElement("div");
   top.className = "arx-top";
@@ -111,10 +112,10 @@ async function archeionOverlay() {
     `<div class="arx-props">` +
     `<div class="arx-row"><span class="arx-k">project</span><span class="arx-v"><a href="/p/${encodeURIComponent(rec.project)}">${esc(rec.project)}</a></span></div>` +
     `<div class="arx-row"><span class="arx-k">date</span><span class="arx-v">${esc((rec.date || "").slice(0, 10))}</span></div>` +
-    `<div class="arx-row"><span class="arx-k">importance</span><span class="arx-v arx-imp">${[1, 2, 3].map((n) => star(n, n <= rec.importance)).join("")}</span></div>` +
+    `<div class="arx-row"><span class="arx-k">importance</span><span class="arx-v arx-imp">${admin ? [1, 2, 3].map((n) => star(n, n <= rec.importance)).join("") : [1, 2, 3].map((n) => (n <= rec.importance ? "★" : "☆")).join("")}</span></div>` +
     `<div class="arx-row"><span class="arx-k">tags</span><span class="arx-v arx-tags"></span></div>` +
     (rec.runs && rec.runs.length ? `<div class="arx-row"><span class="arx-k">runs</span><span class="arx-v arx-runs">${rec.runs.map((r) => `<code>${esc(r.project)}/${esc(r.run)}</code>`).join(" ")}</span></div>` : "") +
-    `<div class="arx-row"><span class="arx-k"></span><span class="arx-v"><button class="arx-bk${rec.bookmarked ? " on" : ""}">${rec.bookmarked ? "★ bookmarked" : "☆ bookmark"}</button> <button class="arx-arch">${rec.archived ? "unarchive" : "archive"}</button></span></div>` +
+    `<div class="arx-row"><span class="arx-k"></span><span class="arx-v"><button class="arx-bk${rec.bookmarked ? " on" : ""}">${rec.bookmarked ? "★ bookmarked" : "☆ bookmark"}</button>${admin ? ` <button class="arx-arch">${rec.archived ? "unarchive" : "archive"}</button>` : ""}</span></div>` +
     `</div>`;
   const h1 = document.body.querySelector("h1"); // the run title
   if (h1) h1.insertAdjacentElement("afterend", top);
@@ -154,8 +155,12 @@ async function archeionOverlay() {
     inp.value = "";
     if (names.length) save("/tagadd", { id, tag: names.join(" ") });
   };
-  (rec.tags || []).forEach((t) => tagsWrap.appendChild(chip(t)));
-  tagsWrap.appendChild(addForm);
+  if (admin) {
+    (rec.tags || []).forEach((t) => tagsWrap.appendChild(chip(t)));
+    tagsWrap.appendChild(addForm);
+  } else { // read-only chips for members (no remove ×, no add form)
+    tagsWrap.innerHTML = (rec.tags || []).map((t) => `<a class="arx-chip" href="/?tag=${encodeURIComponent(t)}">#${esc(t)}</a>`).join("") || '<span class="arx-empty">—</span>';
+  }
 
   const bk = top.querySelector(".arx-bk");
   bk.onclick = () => {
@@ -164,24 +169,50 @@ async function archeionOverlay() {
     save("/bookmark", { kind: "record", id });
   };
   const arch = top.querySelector(".arx-arch");
-  arch.onclick = () => { rec.archived = !rec.archived; arch.textContent = rec.archived ? "unarchive" : "archive"; syncArch(); save("/archive", { id, archived: rec.archived ? 1 : 0 }); };
+  if (arch) arch.onclick = () => { rec.archived = !rec.archived; arch.textContent = rec.archived ? "unarchive" : "archive"; syncArch(); save("/archive", { id, archived: rec.archived ? 1 : 0 }); };
 
   const disc = document.createElement("section");
   disc.className = "arx-disc";
-  const cList = (rec.comments || []).map((c) => `<div class="arx-comment"><div class="arx-cmeta">${esc(c.author)} · ${esc((c.created_at || "").slice(0, 16))}</div><div class="arx-cbody">${c.body_html || esc(c.body_md || "")}</div></div>`).join("");
+  const cList = (rec.comments || []).map((c) => `<div class="arx-comment" data-cid="${c.id}"><div class="arx-cmeta">${esc(c.author)} · ${esc((c.created_at || "").slice(0, 16))}</div><div class="arx-cbody">${c.body_html || esc(c.body_md || "")}</div></div>`).join("");
   disc.innerHTML = `<h2>Discussion</h2><div class="arx-comments">${cList || '<p class="arx-empty">No comments yet.</p>'}</div>` +
     `<form class="arx-cform"><textarea required placeholder="comment (markdown)…" rows="3"></textarea><button>comment</button></form>`;
   document.body.appendChild(disc);
+  const commentsEl = disc.querySelector(".arx-comments");
+  // append a server comment (DOM-built: author via textContent; body_html is our own rendered markdown)
+  const appendComment = (c) => {
+    commentsEl.querySelector(".arx-empty")?.remove();
+    const d = document.createElement("div"); d.className = "arx-comment"; d.dataset.cid = String(c.id);
+    const m = document.createElement("div"); m.className = "arx-cmeta"; m.textContent = `${c.author || "anon"} · ${(c.created_at || "").slice(0, 16)}`;
+    const b = document.createElement("div"); b.className = "arx-cbody"; b.innerHTML = c.body_html || "";
+    d.append(m, b); commentsEl.appendChild(d);
+  };
+  // LIVE poll: merge NEW comments (by id) + cache-bust re-rendered figures, WITHOUT touching the open
+  // textarea — a half-typed comment survives every refresh (consistency via stable data-cid + timestamp).
+  let lastRev = rec.updated_at, polling = false;
+  async function poll() {
+    if (polling || document.hidden) return; polling = true;
+    try {
+      const d = await (await fetch("/api/record/" + ridPath, { headers: { "X-Requested-With": "fetch" } })).json();
+      if (d.updated_at && d.updated_at !== lastRev) { // figures re-rendered → cache-bust the imgs/iframes
+        lastRev = d.updated_at;
+        document.querySelectorAll("figure img[src], figure iframe[src]").forEach((el) => {
+          const base = (el.getAttribute("src") || "").split("?")[0];
+          if (base && !base.startsWith("data:")) el.setAttribute("src", `${base}?v=${encodeURIComponent(d.updated_at)}`);
+        });
+      }
+      const have = new Set([...commentsEl.querySelectorAll("[data-cid]")].map((n) => n.dataset.cid));
+      for (const c of (d.comments || [])) if (!have.has(String(c.id))) appendComment(c);
+    } catch { /* transient */ } finally { polling = false; }
+  }
+  setInterval(poll, 4000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
   const cform = disc.querySelector(".arx-cform");
   cform.onsubmit = (e) => {
     e.preventDefault();
     const ta = cform.querySelector("textarea"); const body = (ta.value || "").trim(); if (!body) return;
-    disc.querySelector(".arx-empty")?.remove();
-    const d = document.createElement("div"); d.className = "arx-comment";
-    d.innerHTML = `<div class="arx-cmeta">you · now</div><div class="arx-cbody"></div>`;
-    d.querySelector(".arx-cbody").textContent = body;
-    disc.querySelector(".arx-comments").appendChild(d); ta.value = "";
-    save("/r/" + ridPath + "/comment", { body_md: body }, () => d.remove());
+    ta.value = ""; // the poll renders the saved comment by id (no optimistic dup); restore on failure
+    save("/r/" + ridPath + "/comment", { body_md: body }, () => { ta.value = body; });
+    setTimeout(poll, 200); // pull the just-saved comment in promptly
   };
   // deep link: a #arxfig=<figid> / #arxsec=<title> in the URL → scroll that figure/section to centre
   // + flash it (so an embed's link "opens centred on" its target, not just at the top of the page).

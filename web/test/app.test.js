@@ -35,10 +35,10 @@ function setup() {
 }
 
 const get = (app, path, q = {}) =>
-  app("GET", path, new URLSearchParams(q), { headers: { host: "localhost", user: "alice" } });
+  app("GET", path, new URLSearchParams(q), { headers: { host: "localhost", user: "alice", trustedUser: "alice" } });
 const post = (app, path, form) =>
   app("POST", path, new URLSearchParams(), {
-    headers: { origin: "http://localhost", host: "localhost", user: "alice" },
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" },
     body: new URLSearchParams(form),
   });
 
@@ -142,7 +142,7 @@ test("PARA: project defaults to Active (Projects) and can be re-filed", () => {
 test("CSRF: cross-origin POST is rejected", () => {
   const app = setup();
   const r = app("POST", "/bookmark", new URLSearchParams(), {
-    headers: { origin: "http://evil.example", host: "localhost", user: "alice" },
+    headers: { origin: "http://evil.example", host: "localhost", user: "alice", trustedUser: "alice" },
     body: new URLSearchParams({ kind: "record", id: "p/r1" }),
   });
   assert.equal(r.status, 403);
@@ -251,7 +251,7 @@ test("framing: dashboard pages allow same-origin embedding (composer iframes Arc
 test("math: $…$ renders as KaTeX server-side (safe with x_1) in the preview", () => {
   const app = setup();
   const r = app("POST", "/api/note/preview", new URLSearchParams(), {
-    headers: { origin: "http://localhost", host: "localhost", user: "alice" },
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" },
     body: new URLSearchParams({ body: "energy $E=mc^2$ and a subscript $x_1$" }),
   });
   assert.equal(r.status, 200);
@@ -261,7 +261,7 @@ test("math: $…$ renders as KaTeX server-side (safe with x_1) in the preview", 
 test("composer: /api/note/preview renders ![[figure]] embeds + [[mention]] links", () => {
   const app = setup();
   const r = app("POST", "/api/note/preview", new URLSearchParams(), {
-    headers: { origin: "http://localhost", host: "localhost", user: "alice" },
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" },
     body: new URLSearchParams({ body: "result ![[p/r1:mag]] see [[p/r1]]" }),
   });
   assert.equal(r.status, 200);
@@ -272,7 +272,7 @@ test("composer: /api/note/preview renders ![[figure]] embeds + [[mention]] links
 test("composer preview: a full page of the CURRENT edits, chrome-free (no header → no duplicate)", () => {
   const app = setup();
   const r = app("POST", "/api/note/preview", new URLSearchParams(), {
-    headers: { origin: "http://localhost", host: "localhost", user: "alice" },
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" },
     body: new URLSearchParams({ title: "Draft", importance: "3", tags: "#mps draft", description: "wip", body: "unsaved body" }),
   });
   assert.equal(r.status, 200);
@@ -324,9 +324,9 @@ test("notes page: pinned / all notes (+ filter) buckets; per-card date·edit·pi
 test("notes page: quick-add has a description field; markdown is signposted; composer button", () => {
   const app = setup();
   const body = get(app, "/notes").body;
-  assert.match(body, /class="note-add"[\s\S]*?name="description"/); // quick-add can set a description
+  assert.match(body, /class="note-add admin-only"[\s\S]*?name="description"/); // quick-add (admin-only) can set a description
   assert.match(body, /Notes are <strong>markdown<\/strong>/); // markdown is made explicit
-  assert.match(body, /class="make-sn" href="\/compose"[^>]*>✎ new in composer/); // the rich-composer entry
+  assert.match(body, /class="make-sn admin-only" href="\/compose"[^>]*>✎ new in composer/); // the rich-composer entry (admin-only)
 });
 
 test("notes: quick-add saves a description (round-trips to the open view + composer)", () => {
@@ -395,11 +395,137 @@ test("LLM channel: check a todo via /api/project/:n/todo (no Origin = server-to-
   const id = ctx.todos[0].id;
   assert.equal(ctx.todos[0].done, 0);
   const r = app("POST", "/api/project/proj/todo", new URLSearchParams(), {
-    headers: { host: "localhost", user: "alice" }, body: new URLSearchParams({ id: String(id), done: "1" }),
+    headers: { host: "localhost", user: "alice", trustedUser: "alice" }, body: new URLSearchParams({ id: String(id), done: "1" }),
   });
   assert.equal(r.status, 200);
   ctx = JSON.parse(get(app, "/api/project/proj/context").body);
   assert.equal(ctx.todos[0].done, 1); // the LLM's check is reflected
+});
+
+// ---- app-level accounts (login layer above the shared Basic-auth gate) ----
+// These exercise the REAL login flow, so they DON'T pass trustedUser (which bypasses auth).
+const A = { origin: "http://localhost", host: "localhost" };
+const ck = (r) => (r.headers?.["Set-Cookie"] || "").split(";")[0]; // "arx_session=<token>"
+const POST = (app, path, form, cookie) => app("POST", path, new URLSearchParams(), { headers: { ...A, cookie }, body: new URLSearchParams(form) });
+const GET = (app, path, cookie) => app("GET", path, new URLSearchParams(), { headers: { host: "localhost", cookie } });
+
+test("accounts: first-run setup → home gated → wrong/right login → self-service password change", () => {
+  const app = setup();
+  // no accounts yet → everything routes to /setup
+  const g0 = GET(app, "/");
+  assert.equal(g0.status, 303); assert.match(g0.headers.Location, /\/setup/);
+  // create the admin (first run) → signed in (Set-Cookie)
+  const s = POST(app, "/setup", { name: "sota", password: "hunter2hunter2" });
+  assert.equal(s.status, 303);
+  const c = ck(s); assert.match(c, /^arx_session=/);
+  const home = GET(app, "/", c);
+  assert.equal(home.status, 200); assert.match(home.body, /sota · /); // header shows user + account/logout
+  // now accounts exist → no cookie bounces to /login (not /setup)
+  assert.match(GET(app, "/notes").headers.Location, /\/login/);
+  // wrong password
+  assert.equal(POST(app, "/login", { name: "sota", password: "nope" }).status, 401);
+  // right password → cookie
+  const good = POST(app, "/login", { name: "sota", password: "hunter2hunter2" });
+  assert.equal(good.status, 303); const c2 = ck(good);
+  // change password
+  const chg = POST(app, "/account", { current: "hunter2hunter2", password: "newpass123456" }, c2);
+  assert.equal(chg.status, 200); assert.match(chg.body, /Password changed/);
+  // old password no longer works; new one does
+  assert.equal(POST(app, "/login", { name: "sota", password: "hunter2hunter2" }).status, 401);
+  assert.equal(POST(app, "/login", { name: "sota", password: "newpass123456" }).status, 303);
+});
+
+test("accounts: admin invites by name only; the user sets their own password on first sign-in", () => {
+  const app = setup();
+  const admin = ck(POST(app, "/setup", { name: "admin", password: "adminpass123" }));
+  // invite by NAME only — no password set by the admin
+  assert.equal(POST(app, "/admin/useradd", { name: "advisor", role: "member" }, admin).status, 303);
+  const list = GET(app, "/admin/users", admin).body;
+  assert.match(list, /advisor/);
+  assert.match(list, /invited/); // pending status
+  assert.match(list, /data-path="\/invite\//); // …with a copyable invite link
+  // advisor signs in → detected pending → activation page (NOT logged in yet)
+  const lg = POST(app, "/login", { name: "advisor", password: "anything" });
+  assert.equal(lg.status, 200);
+  assert.match(lg.body, /Set your password/);
+  assert.ok(!lg.headers?.["Set-Cookie"]);
+  // activate with their OWN password → signed in
+  const act = POST(app, "/activate", { name: "advisor", password: "advisorpass123" });
+  assert.equal(act.status, 303);
+  const ac = ck(act); assert.match(ac, /^arx_session=/);
+  assert.equal(GET(app, "/notes", ac).status, 200); // now in
+  assert.equal(GET(app, "/admin/users", ac).status, 403); // member can't manage
+  // re-login with the chosen password works (pending cleared); a non-existent name still fails
+  assert.equal(POST(app, "/login", { name: "advisor", password: "advisorpass123" }).status, 303);
+  assert.equal(POST(app, "/login", { name: "nobody", password: "whatever123" }).status, 401);
+});
+
+test("accounts: write routes require a session (no anonymous bookmarks)", () => {
+  const app = setup();
+  POST(app, "/setup", { name: "x", password: "xxxxxxxx12" }); // accounts now exist
+  const r = POST(app, "/bookmark", { kind: "record", id: "p/r1" }); // no cookie
+  assert.equal(r.status, 401);
+});
+
+test("roles: members read + comment + bookmark; management is admin-only (server gate + UI hide)", () => {
+  const app = setup();
+  const admin = ck(POST(app, "/setup", { name: "boss", password: "bosspass12345" }));
+  assert.match(GET(app, "/notes", admin).body, /<body[^>]*data-role="admin"/); // admin body role
+  // add a member who then sets their own password
+  POST(app, "/admin/useradd", { name: "guest", role: "member" }, admin); // invite by name
+  const g = ck(POST(app, "/activate", { name: "guest", password: "guestpass12345" })); // user sets own pw
+  const notes = GET(app, "/notes", g);
+  assert.match(notes.body, /<body[^>]*data-role="member"/); // member body role (CSS hides .admin-only)
+  assert.match(notes.body, /class="[^"]*admin-only/); // controls are emitted (server) but CSS-hidden
+  // server enforcement: members can't manage / delete / compose
+  assert.equal(POST(app, "/notedel", { id: "1" }, g).status, 403);
+  assert.equal(POST(app, "/archive", { id: "p/r1", archived: "1" }, g).status, 403);
+  assert.match(GET(app, "/compose", g).headers.Location, /\/notes/);
+  // …but they CAN bookmark (personal) + comment (discussion)
+  assert.equal(POST(app, "/bookmark", { kind: "record", id: "p/r1" }, g).status, 303);
+  assert.equal(POST(app, "/r/p/r1/comment", { body_md: "advisor note" }, g).status, 303);
+  // /api/record carries the role for inject.js (the Pinax overlay)
+  assert.match(GET(app, "/api/record/p/r1", admin).body, /"admin":true/);
+  assert.match(GET(app, "/api/record/p/r1", g).body, /"admin":false/);
+});
+
+test("accounts: invite link — admin invites by name, the link lets the user set their own password", () => {
+  const app = setup();
+  const admin = ck(POST(app, "/setup", { name: "admin", password: "adminpass123" }));
+  POST(app, "/admin/useradd", { name: "advisor", role: "member" }, admin);
+  const link = GET(app, "/admin/users", admin).body.match(/data-path="(\/invite\/[^"]+)"/)[1];
+  assert.ok(link.startsWith("/invite/"));
+  // opening the link shows the activation form (no username needed)
+  const page = GET(app, link);
+  assert.equal(page.status, 200);
+  assert.match(page.body, /Welcome, advisor/);
+  // setting a password via the link → activated + signed in
+  const act = POST(app, link, { password: "advisorpass123" });
+  assert.equal(act.status, 303);
+  const ac = ck(act); assert.match(ac, /^arx_session=/);
+  assert.equal(GET(app, "/notes", ac).status, 200);
+  // the link is single-use (token consumed) → 410 afterwards
+  assert.equal(GET(app, link).status, 410);
+  // and the user can sign in normally with the password they chose
+  assert.equal(POST(app, "/login", { name: "advisor", password: "advisorpass123" }).status, 303);
+});
+
+test("live: /api/record + /api/note expose updated_at + comment ids (for the draft-safe merge poll)", () => {
+  const app = setup();
+  // record discussion
+  post(app, "/r/p/r1/comment", { body_md: "first note on this run" });
+  const rec = JSON.parse(get(app, "/api/record/p/r1").body);
+  assert.ok(rec.updated_at); // figure-freshness token
+  assert.ok(rec.comments[0].id); // stable identity for the merge
+  assert.match(rec.comments[0].body_html, /first note on this run/);
+  // note discussion
+  post(app, "/noteadd", { title: "LiveN", body: "x" });
+  const nid = get(app, "/notes").body.match(/data-note="(\d+)"/)[1];
+  post(app, "/note/" + nid + "/comment", { body_md: "a live comment" });
+  const note = JSON.parse(get(app, "/api/note/" + nid).body);
+  assert.ok(note.comments[0].id);
+  assert.match(note.comments[0].body_html, /a live comment/);
+  assert.equal(get(app, "/api/note/999999").status, 404);
 });
 
 test.after(() => {

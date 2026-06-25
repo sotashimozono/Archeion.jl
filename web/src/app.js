@@ -10,8 +10,10 @@ import {
   notesForDisplay, allNotesForDisplay, noteForDisplay, getNote, addNote, updateNote, removeNote, setPinned, setNoteArchived, setNoteTags, noteComments, addNoteComment,
   parseMentions, resolveMentions, parseEmbeds, resolveEmbeds,
   projectContext, contextMarkdown, setTodoDone,
+  getAccount, getAccountById, getByInviteToken, countAccounts, listAccounts, createAccount, inviteAccount, revokePassword, setPassword, verifyLogin, verifyPassword, deleteAccount, ensureTrustedAdmin,
 } from "./db.js";
 import * as V from "./render.js";
+import { SESSION_COOKIE, sessionSecret, makeToken, verifyToken, parseCookies, setSessionCookie, clearSessionCookie } from "./auth.js";
 
 const html = (b, s = 200) => ({ status: s, type: "text/html; charset=utf-8", body: b });
 const json = (o, s = 200) => ({ status: s, type: "application/json; charset=utf-8", body: JSON.stringify(o, null, 2) });
@@ -41,17 +43,145 @@ function back(h, fallback) {
 
 export function createApp(dbPath) {
   const db = openDb(dbPath);
+  const SECRET = sessionSecret(dbPath);
   return function handle(method, path, query, opts = {}) {
     const h = opts.headers || {};
     const body = opts.body || new URLSearchParams();
-    const uid = () => ensureUser(db, h.user || "");
     // fetch() writes send X-Requested-With: fetch and want 204 (no redirect → no re-render → no
     // stale read-back on Lolipop NFS). Plain form posts (no header) still get the 303 redirect.
     const xrw = (h.xrw || "") === "fetch";
     const ok = (loc) => (xrw ? { status: 204, type: "text/plain; charset=utf-8", body: "" } : redirect(loc));
+    const isPost = method === "POST";
+    const cookie = (loc, value) => ({ status: 303, type: "text/html; charset=utf-8", body: "", headers: { Location: loc, "Set-Cookie": value } });
+
+    // ===== identity (layer 2: app accounts; layer 1 = the shared Basic-auth gate, in front) =====
+    // Trusted bypass: the panza daemon + the test harness pass headers.trustedUser → treated as an
+    // admin without a login (the live CGI never sets it, so the live site requires a real login).
+    let me = null;
+    if (h.trustedUser) me = ensureTrustedAdmin(db, h.trustedUser);
+    else {
+      const id = verifyToken(parseCookies(h.cookie || "")[SESSION_COOKIE], SECRET);
+      if (id) me = getAccountById(db, id);
+    }
+    const uid = () => (me ? me.id : 0);
+    const needSetup = countAccounts(db) === 0;
+    const sb = () => ({ projects: projects(db), tags: allTags(db) }); // sidebar data for the logged-in auth pages
+    const role = me ? (me.role === "admin" ? "admin" : "member") : "";
+    const r = (() => {
+
+    // ----- public auth routes (reachable without a session) -----
+    if (path === "/setup") {
+      if (!needSetup) return redirect(me ? "/" : "/login");
+      if (isPost) {
+        if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
+        const name = (body.get("name") || "").trim(), pass = body.get("password") || "";
+        if (!name || pass.length < 8) return html(V.renderSetup("Username required and password must be ≥ 8 characters."), 400);
+        const id = createAccount(db, name, pass, { role: "admin" });
+        if (!id) return html(V.renderSetup("Could not create the account (name taken?)."), 400);
+        return cookie("/", setSessionCookie(makeToken(id, SECRET)));
+      }
+      return html(V.renderSetup());
+    }
+    if (path === "/login") {
+      if (needSetup) return redirect("/setup");
+      if (me) return redirect("/");
+      if (isPost) {
+        if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
+        const name = (body.get("name") || "").trim();
+        const acc = getAccount(db, name);
+        if (acc && !acc.pw_hash) return html(V.renderActivate(acc.name)); // invited (pending) → set own password
+        const u = verifyLogin(db, name, body.get("password") || "");
+        if (!u) return html(V.renderLogin("Wrong username or password."), 401);
+        return cookie("/", setSessionCookie(makeToken(u.id, SECRET)));
+      }
+      return html(V.renderLogin());
+    }
+    // invite link: /invite/<token> → set your own password (no username needed), then signed in
+    if (path.startsWith("/invite/")) {
+      if (me) return redirect("/");
+      const tok = decodeURIComponent(path.slice(8));
+      const acc = getByInviteToken(db, tok);
+      if (!acc || acc.pw_hash) return html(V.renderLogin("That invite link is invalid or already used."), 410);
+      if (isPost) {
+        if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
+        const pass = body.get("password") || "";
+        if (pass.length < 8) return html(V.renderActivate(acc.name, { err: "Password must be ≥ 8 characters.", action: `/invite/${encodeURIComponent(tok)}`, token: tok }), 400);
+        setPassword(db, acc.id, pass, { mustChange: false }); // activates + consumes the token
+        return cookie("/", setSessionCookie(makeToken(acc.id, SECRET)));
+      }
+      return html(V.renderActivate(acc.name, { action: `/invite/${encodeURIComponent(tok)}`, token: tok }));
+    }
+    // first sign-in of an invited account via username (alternative to the link)
+    if (path === "/activate") {
+      if (me) return redirect("/");
+      const name = (body.get("name") || query.get("name") || "").trim();
+      const acc = getAccount(db, name);
+      if (!acc || acc.pw_hash) return redirect("/login"); // unknown or already activated
+      if (isPost) {
+        if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
+        const pass = body.get("password") || "";
+        if (pass.length < 8) return html(V.renderActivate(acc.name, { err: "Password must be ≥ 8 characters." }), 400);
+        setPassword(db, acc.id, pass, { mustChange: false });
+        return cookie("/", setSessionCookie(makeToken(acc.id, SECRET)));
+      }
+      return html(V.renderActivate(acc.name));
+    }
+    if (path === "/logout") return cookie("/login", clearSessionCookie());
+
+    // ----- gate: everything below requires a session -----
+    if (!me) {
+      if (needSetup) return redirect("/setup");
+      return method === "GET" ? redirect("/login") : { status: 401, type: "text/plain", body: "login required" };
+    }
+    // an admin-issued temporary password must be changed before anything else
+    if (me.must_change && path !== "/account") {
+      return method === "GET" ? redirect("/account") : { status: 403, type: "text/plain", body: "change your password first" };
+    }
+
+    // ----- self-service account (password change) -----
+    if (path === "/account") {
+      if (isPost) {
+        if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
+        const cur = body.get("current") || "", next = body.get("password") || "";
+        if (next.length < 8) return html(V.renderAccount(me, "New password must be ≥ 8 characters.", null, sb()), 400);
+        if (!verifyPassword(cur, getAccountById(db, me.id).pw_hash)) return html(V.renderAccount(me, "Current password is wrong.", null, sb()), 401);
+        setPassword(db, me.id, next, { mustChange: false });
+        return html(V.renderAccount({ ...me, must_change: 0 }, null, "Password changed.", sb()));
+      }
+      return html(V.renderAccount(me, null, null, sb()));
+    }
+    // ----- admin: user management -----
+    if (path.startsWith("/admin/")) {
+      if (me.role !== "admin") return { status: 403, type: "text/plain", body: "admins only" };
+      if (isPost) {
+        if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
+        if (path === "/admin/useradd") {
+          // invite by name only — the user sets their own password on first sign-in
+          const name = (body.get("name") || "").trim();
+          if (name) inviteAccount(db, name, body.get("role") === "admin" ? "admin" : "member");
+          return redirect("/admin/users");
+        }
+        if (path === "/admin/userreset") {
+          const id = +body.get("id"); // revoke the password → back to pending; the user re-sets it
+          if (id && id !== me.id) revokePassword(db, id);
+          return redirect("/admin/users");
+        }
+        if (path === "/admin/userdel") {
+          const id = +body.get("id");
+          if (id && id !== me.id) deleteAccount(db, id); // never delete yourself
+          return redirect("/admin/users");
+        }
+        return redirect("/admin/users");
+      }
+      return html(V.renderAdminUsers(listAccounts(db), me, sb()));
+    }
 
     if (method === "POST") {
       if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
+      // members may only bookmark (personal) + comment (discussion); all management/destructive writes
+      // (notes, archive, importance, tags, projects, …) are admin-only. The UI also hides these.
+      if (me.role !== "admin" && !(path === "/bookmark" || path.endsWith("/comment")))
+        return { status: 403, type: "text/plain", body: "admins only" };
       if (path === "/bookmark") {
         toggleBookmark(db, uid(), body.get("kind") === "figure" ? "figure" : "record", body.get("id") || "");
         return ok(back(h, "/"));
@@ -199,7 +329,8 @@ export function createApp(dbPath) {
       projects: projects(db),
       tags: allTags(db),
       bset: bookmarkedSet(db, uid()),
-      user: h.user || "",
+      user: me ? me.display_name || me.name : "",
+      admin: !!me && me.role === "admin", // → <body data-role> → CSS hides .admin-only for members
     });
 
     if (path === "/") {
@@ -250,6 +381,7 @@ export function createApp(dbPath) {
       return html(V.renderNoteView(note, note ? noteComments(db, id) : [], side()), note ? 200 : 404);
     }
     if (path === "/compose") {
+      if (me.role !== "admin") return redirect("/notes"); // composing/editing notes is admin-only
       // the two-pane structure-note composer (pick figures/records to embed + markdown + live preview)
       const nid = query.get("id");
       const note = nid ? noteForDisplay(db, nid) : { scope: query.get("scope") || "", body_md: "", mentions: [], embeds: [] };
@@ -299,14 +431,28 @@ export function createApp(dbPath) {
         if (!rec) return { status: 404, type: "application/json; charset=utf-8", body: "{}" };
         const data = {
           id: rec.id, title: rec.title, project: rec.project, date: rec.date,
-          importance: rec.importance, archived: !!rec.archived,
+          importance: rec.importance, archived: !!rec.archived, admin: me.role === "admin",
           tags: recordTags(db, id), runs: recordRuns(db, id),
           bookmarked: bookmarkedSet(db, uid()).has("record:" + id),
+          updated_at: rec.updated_at, // figure-freshness token for the live poll (cache-bust on change)
           comments: recordComments(db, id).map((c) => ({
-            author: c.author, created_at: c.created_at, body_html: V.mdHtml(c.body_md),
+            id: c.id, author: c.author, created_at: c.created_at, body_html: V.mdHtml(c.body_md),
           })),
         };
         return { status: 200, type: "application/json; charset=utf-8", body: JSON.stringify(data) };
+      }
+    }
+    {
+      // JSON for the note "open" view live-poll: merge new comments without losing the draft
+      const m = path.match(/^\/api\/note\/(.+)$/);
+      if (m) {
+        const id = decodeURIComponent(m[1]);
+        const note = getNote(db, id);
+        if (!note) return { status: 404, type: "application/json; charset=utf-8", body: "{}" };
+        return { status: 200, type: "application/json; charset=utf-8", body: JSON.stringify({
+          updated_at: note.updated_at,
+          comments: noteComments(db, id).map((c) => ({ id: c.id, author: c.author, created_at: c.created_at, body_html: V.mdHtml(c.body_md) })),
+        }) };
       }
     }
     if (path.startsWith("/r/")) {
@@ -326,10 +472,17 @@ export function createApp(dbPath) {
           bset: s.bset,
           user: s.user,
           projects: s.projects,
+          admin: s.admin,
         }),
         rec ? 200 : 404,
       );
     }
     return html(V.renderRecord(null, side()), 404);
+    })();
+    // tag <body> with the role so CSS can hide .admin-only controls for members. The server-side gate
+    // above is the real enforcement; this is just UX (don't show guests buttons that would 403).
+    if (role && r && typeof r.body === "string" && (r.type || "").includes("html") && r.body.includes("<body"))
+      r.body = r.body.replace("<body", `<body data-role="${role}"`);
+    return r;
   };
 }
