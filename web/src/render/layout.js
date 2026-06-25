@@ -49,7 +49,7 @@ export function composeShell(title, main, headerExtra = "") {
 // the note keeps its narrow reading column (.present-wrap) inside <main>. The back-links (crumb, Notes,
 // edit) sit on the right. `chrome:false` drops header/sidebar/footer + the script entirely — used by the
 // composer's inline preview, whose own header already covers it (no duplicate, stays clean).
-export function presentLayout(title, main, { scope = "", id = "", chrome = true, projects = [], tags = [] } = {}) {
+export function presentLayout(title, main, { scope = "", id = "", chrome = true, projects = [], tags = [], annot = "" } = {}) {
   const headLinks = `<link rel="stylesheet" href="/style.css?v=${ASSET_V}"><link rel="stylesheet" href="/katex/katex.min.css">`;
   if (!chrome) {
     return `<!doctype html><html lang="ja"><head>
@@ -60,7 +60,7 @@ export function presentLayout(title, main, { scope = "", id = "", chrome = true,
   return `<!doctype html><html lang="ja"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>${headLinks}<script src="/app.js?v=${ASSET_V}" defer></script></head>
-<body class="present-body">
+<body class="present-body"${annot ? ` data-note="${annot}"` : ""}>
 <header class="present-head"><button class="hamburger" type="button" aria-label="toggle sidebar" title="menu">☰</button><a class="brand" href="/">Archeion</a>
 <form action="/search" method="get" class="search"><input name="q" placeholder="search projects…" autocomplete="off"></form>
 <nav class="present-nav">${scope ? `<a class="present-crumb" href="/p/${rid(scope)}">${esc(scope)}</a>` : ""}<a href="/notes">📝 Notes</a>${id ? `<a class="present-edit" href="/compose?id=${id}">edit ✎</a>` : ""}</nav></header>

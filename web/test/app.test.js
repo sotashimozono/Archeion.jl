@@ -528,6 +528,28 @@ test("live: /api/record + /api/note expose updated_at + comment ids (for the dra
   assert.equal(get(app, "/api/note/999999").status, 404);
 });
 
+test("annotations: structure-note only — add (anchored) / list / delete; non-pinned rejected", () => {
+  const app = setup();
+  const anno = (id, form) => app("POST", "/api/note/" + id + "/annotations", new URLSearchParams(), {
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" }, body: new URLSearchParams(form),
+  });
+  const sid = post(app, "/noteadd", { title: "SN", body: "the magnetization peaks near beta-c here", pinned: "1", from: "compose" }).headers.Location.match(/id=(\d+)/)[1];
+  // add a passage annotation (text-quote anchor + body)
+  const r = anno(sid, { exact: "peaks near beta-c", prefix: "magnetization ", suffix: " here", body_md: "is this real?" });
+  assert.equal(r.status, 200);
+  const a = JSON.parse(r.body);
+  assert.ok(a.id); assert.equal(a.anchor.exact, "peaks near beta-c"); assert.match(a.body_html, /is this real/); assert.ok(a.can_delete);
+  // list
+  const list = JSON.parse(get(app, "/api/note/" + sid + "/annotations").body).annotations;
+  assert.equal(list.length, 1); assert.equal(list[0].id, a.id); assert.equal(list[0].anchor.exact, "peaks near beta-c");
+  // delete (own/admin)
+  assert.equal(post(app, "/api/note/" + sid + "/annotations/del", { aid: a.id }).status, 204);
+  assert.equal(JSON.parse(get(app, "/api/note/" + sid + "/annotations").body).annotations.length, 0);
+  // a NON-pinned note refuses annotations (structure notes only)
+  const pid = post(app, "/noteadd", { title: "plain", body: "y", from: "compose" }).headers.Location.match(/id=(\d+)/)[1];
+  assert.equal(anno(pid, { exact: "y", body_md: "no" }).status, 403);
+});
+
 test.after(() => {
   for (const s of ["", "-wal", "-shm"]) rmSync(dbPath + s, { force: true });
 });

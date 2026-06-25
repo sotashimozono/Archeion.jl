@@ -134,6 +134,26 @@ export function noteComments(db, noteId) {
     .prepare("SELECT c.id, c.body_md, c.created_at, COALESCE(u.name,'anon') AS author FROM note_comments c LEFT JOIN users u ON u.id = c.user_id WHERE c.note_id = ? ORDER BY c.id")
     .all(noteId);
 }
+// inline annotations on a structure note (passage highlight + margin note). anchor = {exact,prefix,suffix}.
+const safeParse = (s) => { try { return JSON.parse(s || "{}"); } catch { return {}; } };
+export function addNoteAnnotation(db, noteId, userId, anchor, bodyMd) {
+  bodyMd = String(bodyMd || "").trim();
+  if (!bodyMd || !anchor || !anchor.exact) return null;
+  return db.prepare("INSERT INTO note_annotations (note_id, user_id, anchor, body_md) VALUES (?,?,?,?)")
+    .run(noteId, userId ?? null, JSON.stringify({ exact: String(anchor.exact), prefix: String(anchor.prefix || ""), suffix: String(anchor.suffix || "") }), bodyMd).lastInsertRowid;
+}
+export function noteAnnotations(db, noteId) {
+  return db
+    .prepare("SELECT a.id, a.user_id, a.anchor, a.body_md, a.created_at, COALESCE(u.name,'anon') AS author FROM note_annotations a LEFT JOIN users u ON u.id = a.user_id WHERE a.note_id = ? ORDER BY a.id")
+    .all(noteId)
+    .map((a) => ({ ...a, anchor: safeParse(a.anchor) }));
+}
+export function getNoteAnnotation(db, id) {
+  return db.prepare("SELECT id, note_id, user_id FROM note_annotations WHERE id = ?").get(id);
+}
+export function removeNoteAnnotation(db, id) {
+  return db.prepare("DELETE FROM note_annotations WHERE id = ?").run(id).changes;
+}
 // archive/unarchive = move a note out of the active list (still in search / the archived section)
 export function setNoteArchived(db, id, on) {
   const n = db.prepare("SELECT 1 FROM notes WHERE id = ?").get(id);

@@ -145,7 +145,7 @@ function noteArticle(note) {
 // WITH the home-style header + sidebar/hamburger so it's a fully navigable Archeion page).
 export function renderShow(note, { projects = [], tags = [] } = {}) {
   if (!note) return presentLayout("Not found", `<article class="present"><p class="empty">Page not found.</p></article>`, { projects, tags });
-  return presentLayout(note.title || "Archeion", noteArticle(note), { scope: note.scope, id: note.id, projects, tags });
+  return presentLayout(note.title || "Archeion", noteArticle(note), { scope: note.scope, id: note.id, projects, tags, annot: note.pinned ? note.id : "" });
 }
 
 // inline composer preview (POST /api/note/preview): the SAME article, but CHROME-FREE — it renders
