@@ -550,29 +550,38 @@ test("annotations: structure-note only — add (anchored) / list / delete; non-p
   assert.equal(anno(pid, { exact: "y", body_md: "no" }).status, 403);
 });
 
-test("annotations: record page TEXT — add (anchored, page-scoped) / list / delete", () => {
+test("annotations: unified record/figure/section/passage — each carries its location; list + delete", () => {
   const app = setup();
   const rec = "p/r1"; // seeded record
   const anno = (form, sfx = "") => app("POST", "/api/record/" + rec + "/annotations" + sfx, new URLSearchParams(), {
     headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" }, body: new URLSearchParams(form),
   });
-  // annotate a passage of the descriptive prose on a specific page file
-  const r = anno({ page: "eq_overview.html", exact: "volume law", prefix: "the ", suffix: " entropy", body_md: "which **cut**?" });
-  assert.equal(r.status, 200);
-  const a = JSON.parse(r.body);
-  assert.ok(a.id); assert.equal(a.anchor.exact, "volume law"); assert.equal(a.page, "eq_overview.html");
-  assert.match(a.body_html, /which/); assert.ok(a.can_delete);
-  // list is scoped to that page (query via the q param — the server reads url.searchParams)
+  // a PASSAGE on a page (text-quote anchored)
+  const p = JSON.parse(anno({ kind: "passage", page: "eq_overview.html", exact: "volume law", prefix: "the ", suffix: " entropy", body_md: "which **cut**?" }).body);
+  assert.equal(p.target_kind, "passage"); assert.equal(p.page, "eq_overview.html"); assert.equal(p.anchor.exact, "volume law");
+  assert.match(p.body_html, /which/); assert.ok(p.can_delete);
+  // a FIGURE comment (figures can't be text-selected → its stable id is the location)
+  const f = JSON.parse(anno({ kind: "figure", page: "eq_overview.html", target_id: "p/r1:mag", body_md: "noisy near Tc" }).body);
+  assert.equal(f.target_kind, "figure"); assert.equal(f.target_id, "p/r1:mag");
+  // a SECTION comment
+  const s = JSON.parse(anno({ kind: "section", page: "eq_overview.html", target_id: "Thermodynamics", body_md: "expand this" }).body);
+  assert.equal(s.target_kind, "section"); assert.equal(s.target_id, "Thermodynamics");
+  // the page's list returns all three, each with its location
   const onPage = JSON.parse(get(app, "/api/record/" + rec + "/annotations", { page: "eq_overview.html" }).body).annotations;
-  assert.equal(onPage.length, 1); assert.equal(onPage[0].id, a.id);
-  // a DIFFERENT page sees none (page scoping)
-  assert.equal(JSON.parse(get(app, "/api/record/" + rec + "/annotations", { page: "gq_dqt.html" }).body).annotations.length, 0);
-  // delete (own/admin)
-  assert.equal(post(app, "/api/record/" + rec + "/annotations/del", { aid: a.id }).status, 204);
-  assert.equal(JSON.parse(get(app, "/api/record/" + rec + "/annotations", { page: "eq_overview.html" }).body).annotations.length, 0);
+  assert.equal(onPage.length, 3);
+  assert.deepEqual(new Set(onPage.map((x) => x.target_kind)), new Set(["passage", "figure", "section"]));
+  // filter by kind
+  const figs = JSON.parse(get(app, "/api/record/" + rec + "/annotations", { kind: "figure" }).body).annotations;
+  assert.equal(figs.length, 1); assert.equal(figs[0].target_id, "p/r1:mag");
+  // record-level discussion lands in the same table (kind=record) via /r/:id/comment
+  assert.equal(post(app, "/r/p/r1/comment", { body_md: "overall LGTM" }).status, 303);
+  assert.equal(JSON.parse(get(app, "/api/record/" + rec + "/annotations", { kind: "record" }).body).annotations.length, 1);
+  // delete one (own/admin)
+  assert.equal(post(app, "/api/record/" + rec + "/annotations/del", { aid: f.id }).status, 204);
+  assert.equal(JSON.parse(get(app, "/api/record/" + rec + "/annotations", { kind: "figure" }).body).annotations.length, 0);
   // unknown record → 404
   assert.equal(app("POST", "/api/record/p/nope/annotations", new URLSearchParams(), {
-    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" }, body: new URLSearchParams({ exact: "x", body_md: "y" }),
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" }, body: new URLSearchParams({ kind: "record", body_md: "y" }),
   }).status, 404);
 });
 

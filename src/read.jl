@@ -46,8 +46,8 @@ function record_comments(db, rid)
                 conn,
                 """
                 SELECT c.body_md, c.created_at, COALESCE(u.name,'anon') AS author
-                FROM comments c LEFT JOIN users u ON u.id = c.user_id
-                WHERE c.record_id = ? ORDER BY c.id
+                FROM annotations c LEFT JOIN users u ON u.id = c.user_id
+                WHERE c.record_id = ? AND c.target_kind = 'record' ORDER BY c.id
                 """,
                 (rid,),
             )
@@ -73,11 +73,53 @@ function record_tags(db, rid)
 end
 
 """
+    record_annotation_list(db, rid) -> Vector{NamedTuple}
+
+Every comment/annotation on a record, each WITH its LOCATION — the traceable comment list. One entry per
+`annotations` row (oldest-first): `(; id, kind, page, target, anchor, body_md, author, created_at)`,
+`kind ∈ record/figure/section/passage`, `target` = figure id / section heading ("" for record/passage),
+`anchor` = the passage's text-quote JSON ("" otherwise). So an LLM can read each comment and exactly
+where it points from one query.
+"""
+function record_annotation_list(db, rid)
+    _withdb(db) do conn
+        out = NamedTuple[]
+        for r in DBInterface.execute(
+            conn,
+            """
+            SELECT a.id, a.target_kind, a.page, a.target_id, a.anchor, a.body_md, a.created_at,
+                   COALESCE(u.name,'anon') AS author
+            FROM annotations a LEFT JOIN users u ON u.id = a.user_id
+            WHERE a.record_id = ? ORDER BY a.id
+            """,
+            (rid,),
+        )
+            push!(
+                out,
+                (;
+                    id=Int(r.id),
+                    kind=String(r.target_kind),
+                    page=String(r.page),
+                    target=String(r.target_id),
+                    anchor=r.anchor === missing ? "" : String(r.anchor),
+                    body_md=String(r.body_md),
+                    author=String(r.author),
+                    created_at=String(r.created_at),
+                ),
+            )
+        end
+        return out
+    end
+end
+
+"""
     record_annotations(db, rid) -> NamedTuple
 
 The full app-owned annotation of a record: `(; exists, importance, archived, title, project, tags,
-comments)`. `importance` is 0..3 (shared "notable"); `archived` is a `Bool` — together the human's
-"status". `exists` is `false` when the id isn't in the registry (everything else defaulted).
+comments, annotations)`. `importance` is 0..3 (shared "notable"); `archived` is a `Bool` — together the
+human's "status". `comments` is the record-level discussion (back-compat); `annotations` is the FULL
+location-tagged list (record/figure/section/passage — see `record_annotation_list`). `exists` is `false`
+when the id isn't in the registry (everything else defaulted).
 """
 function record_annotations(db, rid)
     _withdb(db) do conn
@@ -106,6 +148,7 @@ function record_annotations(db, rid)
             project="",
             tags=String[],
             comments=NamedTuple[],
+            annotations=NamedTuple[],
         )
         return (;
             exists=true,
@@ -115,6 +158,7 @@ function record_annotations(db, rid)
             project=project,
             tags=record_tags(conn, rid),
             comments=record_comments(conn, rid),
+            annotations=record_annotation_list(conn, rid),
         )
     end
 end
@@ -202,6 +246,21 @@ function feedback_md(db, rid)
             println(io, "## Discussion")
             for c in a.comments
                 println(io, "- **", c.author, "** (", c.created_at, "): ", c.body_md)
+            end
+        end
+        # anchored comments (figure / section / passage), each tagged with WHERE it points
+        anchored = filter(x -> x.kind != "record", a.annotations)
+        if !isempty(anchored)
+            println(io, "\n## Annotations (by location)")
+            for x in anchored
+                loc = if x.kind == "figure"
+                    string("figure `", x.target, "`")
+                elseif x.kind == "section"
+                    string("section \"", x.target, "\"", isempty(x.page) ? "" : " ($(x.page))")
+                else
+                    string("passage", isempty(x.page) ? "" : " ($(x.page))")
+                end
+                println(io, "- [", loc, "] **", x.author, "**: ", x.body_md)
             end
         end
         return String(take!(io))

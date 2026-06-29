@@ -37,7 +37,12 @@ export Record, write_record, read_record
 export build_index, add_search
 export master_ledger, records_from_outdirs, discover
 export ingest
-export record_comments, record_tags, record_annotations, project_annotations, feedback_md
+export record_comments,
+    record_tags,
+    record_annotations,
+    record_annotation_list,
+    project_annotations,
+    feedback_md
 export record_versions, status
 export deploy, write_basic_auth, read_deploy_target
 export RemoteTransport,

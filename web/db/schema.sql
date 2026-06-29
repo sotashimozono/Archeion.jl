@@ -180,30 +180,26 @@ CREATE TABLE IF NOT EXISTS bookmarks (
     PRIMARY KEY (user_id, target_kind, target_id)
 );
 
--- discussion + memo (per-user, mutually visible) on a record
-CREATE TABLE IF NOT EXISTS comments (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    record_id  TEXT    NOT NULL REFERENCES records(id) ON DELETE CASCADE,
-    user_id    INTEGER NOT NULL REFERENCES users(id),
-    body_md    TEXT    NOT NULL,
-    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+-- UNIFIED comments + annotations on a record, EVERY one carrying its LOCATION so the comment list and
+-- where each comment points are traceable from one table (app-owned; all server-side, no "unsaved"
+-- localStorage). Supersedes the old `comments` (record discussion) + `record_annotations` (passage)
+-- tables. The LOCATION is (target_kind, page, target_id, anchor):
+--   record  → the whole record (the Discussion)              page='' target_id='' anchor=''
+--   figure  → a first-class figure (its stable id)           target_id=<figure id>
+--   section → a section of a page                             page=<file> target_id=<section heading>
+--   passage → a text passage (text-quote, survives re-render) page=<file> anchor={exact,prefix,suffix}
+CREATE TABLE IF NOT EXISTS annotations (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    record_id   TEXT    NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+    target_kind TEXT    NOT NULL DEFAULT 'record',  -- 'record' | 'figure' | 'section' | 'passage'
+    page        TEXT    NOT NULL DEFAULT '',        -- page file (multi-page) for figure/section/passage
+    target_id   TEXT    NOT NULL DEFAULT '',        -- figure id | section heading ('' for record/passage)
+    anchor      TEXT    NOT NULL DEFAULT '',        -- JSON {exact,prefix,suffix} for a passage
+    user_id     INTEGER REFERENCES users(id),
+    body_md     TEXT    NOT NULL,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX IF NOT EXISTS idx_comments_record ON comments(record_id);
-
--- inline annotations on a RECORD's Pinax page text (the descriptive "note" prose, NOT just figures):
--- select a passage → margin note. `page` scopes the anchor to one page file of a multi-page Pinax doc
--- (''=single-page/index). anchor is a text-quote (JSON {exact,prefix,suffix}) so it survives re-renders.
--- App-owned (human-side); re-ingest never touches it.
-CREATE TABLE IF NOT EXISTS record_annotations (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    record_id  TEXT    NOT NULL REFERENCES records(id) ON DELETE CASCADE,
-    page       TEXT    NOT NULL DEFAULT '',   -- which page file (multi-page docs); '' = single-page
-    user_id    INTEGER REFERENCES users(id),
-    anchor     TEXT    NOT NULL,              -- JSON: {exact, prefix, suffix}
-    body_md    TEXT    NOT NULL,
-    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_record_annotations_rec ON record_annotations(record_id, page);
+CREATE INDEX IF NOT EXISTS idx_annotations_loc ON annotations(record_id, target_kind, page, target_id);
 
 -- ===================== SEARCH (records + figures + comments) =====================
 -- App/ingest-maintained unified FTS. One row per record (title+body_md), per figure (caption),

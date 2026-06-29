@@ -7,7 +7,7 @@ import {
   projectMeta, addProjectTag, removeProjectTag, addTodo, toggleTodo, removeTodo,
   ensureUser, setRecordImportance, setFigureImportance, setArchived, toggleBookmark,
   bookmarkedSet, userBookmarks, addComment, addTag, removeTag,
-  addRecordAnnotation, recordAnnotations, getRecordAnnotation, removeRecordAnnotation,
+  addAnnotation, recordAnnotations, getAnnotation, removeAnnotation,
   notesForDisplay, allNotesForDisplay, noteForDisplay, getNote, addNote, updateNote, removeNote, setPinned, setNoteArchived, setNoteTags, noteComments, addNoteComment,
   addNoteAnnotation, noteAnnotations, getNoteAnnotation, removeNoteAnnotation, relatedNotes, graphData,
   parseMentions, resolveMentions, parseEmbeds, resolveEmbeds,
@@ -200,17 +200,23 @@ export function createApp(dbPath) {
         const a = noteAnnotations(db, note.id).find((x) => x.id === aid);
         return { status: 200, type: "application/json; charset=utf-8", body: JSON.stringify({ ...a, body_html: V.mdHtml(a.body_md), can_delete: true }) };
       }
-      // record annotations: passage notes on a record's Pinax page TEXT (annot.js, on every page file)
+      // unified annotations: a comment + its LOCATION (record/figure/section/passage) on a record's
+      // Pinax page (annot.js). All server-side — no localStorage "unsaved".
       const ram = path.match(/^\/api\/record\/(.+)\/annotations(\/del)?$/);
       if (ram) {
         const recId = decodeURIComponent(ram[1]);
         if (!getRecord(db, recId)) return { status: 404, type: "text/plain", body: "no record" };
         if (ram[2]) { // /annotations/del — own annotation, or admin
-          const a = getRecordAnnotation(db, +body.get("aid"));
-          if (a && a.record_id === recId && (a.user_id === me.id || me.role === "admin")) removeRecordAnnotation(db, a.id);
+          const a = getAnnotation(db, +body.get("aid"));
+          if (a && a.record_id === recId && (a.user_id === me.id || me.role === "admin")) removeAnnotation(db, a.id);
           return { status: 204, type: "text/plain", body: "" };
         }
-        const aid = addRecordAnnotation(db, recId, body.get("page") || "", uid(), { exact: body.get("exact"), prefix: body.get("prefix"), suffix: body.get("suffix") }, body.get("body_md"));
+        const exact = body.get("exact");
+        const anchor = exact ? { exact, prefix: body.get("prefix") || "", suffix: body.get("suffix") || "" } : null;
+        const aid = addAnnotation(db, recId, {
+          kind: body.get("kind") || "record", page: body.get("page") || "",
+          targetId: body.get("target_id") || "", anchor,
+        }, uid(), body.get("body_md"));
         if (!aid) return { status: 400, type: "text/plain", body: "bad annotation" };
         const a = recordAnnotations(db, recId).find((x) => x.id === aid);
         return { status: 200, type: "application/json; charset=utf-8", body: JSON.stringify({ ...a, body_html: V.mdHtml(a.body_md), can_delete: true }) };
@@ -462,14 +468,18 @@ export function createApp(dbPath) {
     }
     if (path === "/api/graph") return json(graphData(db)); // {nodes,edges} for the /graph canvas
     {
-      // record annotations (passage highlights on the page TEXT) — annot.js load + live poll. MUST come
-      // before the catch-all /api/record/(.+) below. ?page= scopes to one file of a multi-page doc.
+      // unified annotations (record/figure/section/passage), each with its LOCATION — annot.js load +
+      // live poll + the LLM. MUST come before the catch-all /api/record/(.+). Optional ?kind=&?page= filter.
       const ram = path.match(/^\/api\/record\/(.+)\/annotations$/);
       if (ram) {
         const id = decodeURIComponent(ram[1]);
         if (!getRecord(db, id)) return { status: 404, type: "application/json; charset=utf-8", body: "{}" };
-        const list = recordAnnotations(db, id, query.get("page") || "").map((a) => ({
-          id: a.id, author: a.author, created_at: a.created_at, anchor: a.anchor, page: a.page,
+        const opts = {};
+        const k = query.get("kind"); if (k) opts.kind = k;
+        const pg = query.get("page"); if (pg !== null) opts.page = pg;
+        const list = recordAnnotations(db, id, opts).map((a) => ({
+          id: a.id, author: a.author, created_at: a.created_at,
+          target_kind: a.target_kind, page: a.page, target_id: a.target_id, anchor: a.anchor,
           body_html: V.mdHtml(a.body_md), can_delete: a.user_id === me.id || me.role === "admin",
         }));
         return { status: 200, type: "application/json; charset=utf-8", body: JSON.stringify({ annotations: list }) };
