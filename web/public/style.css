@@ -380,6 +380,11 @@ mark.anno.anno-flash { background: #ffd43b; }
   .cmp.refs-open .cmp-pick { position: absolute; inset: 0; width: 100%; z-index: 20; }
 }
 .figcard img { width: 100%; height: 150px; object-fit: contain; background: #fafafa; display: block; border-bottom: 1px solid var(--line); }
+/* PDF figures embed as a (non-interactive) iframe = the browser's PDF viewer; pointer-events:none lets
+   the wrapping <a> take the click (navigate to the figure's sub-page). */
+.figcard .pdfthumb { width: 100%; height: 150px; background: #fff; display: block; border: 0; border-bottom: 1px solid var(--line); pointer-events: none; }
+.card .cardthumb .pdfthumb { width: 100%; height: 120px; background: #fff; display: block; border: 0; pointer-events: none; }
+.embed-fig .pdfthumb { width: 100%; height: 240px; background: #fff; border: 1px solid var(--line); border-radius: var(--r); display: block; pointer-events: none; }
 .figcard figcaption { padding: .5rem .6rem; font-size: .8rem; display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
 .figcard .rt { color: var(--muted); }
 .dl { color: var(--muted); text-decoration: none; font-size: 1rem; line-height: 1; }

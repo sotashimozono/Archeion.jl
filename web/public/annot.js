@@ -21,6 +21,7 @@
   st.textContent = `
   mark.anno{background:#fff3a8;border-radius:2px;cursor:pointer}
   mark.anno.anno-flash{outline:2px solid #f0a500}
+  .anno-flash{outline:2px solid #f0a500;outline-offset:2px;border-radius:3px}
   .anno-cmt{display:inline-flex;align-items:center;gap:3px;margin-left:8px;padding:2px 8px;border:1px solid #cfd8dc;background:#eceff1;color:#37474f;border-radius:6px;cursor:pointer;font:12px system-ui}
   .anno-cmt:hover{background:#cfd8dc}
   .arx-caret{border:none;background:none;cursor:pointer;font:13px system-ui;color:#7a8a99;margin-right:6px;padding:0;vertical-align:middle}
@@ -225,6 +226,22 @@
     }
     load();
     setInterval(() => { if (!document.hidden && !form) load(); }, 5000);
+
+    // deep-link: /pages/<rec>/<page>.html#arxfig=<figid> (or #arxsec=<title>) → centre+flash the target,
+    // so a figure link from the project gallery / a note lands ON the figure (not just the page top).
+    const focusTarget = () => {
+      const h = location.hash || "", mf = h.match(/arxfig=([^&]+)/), ms = h.match(/arxsec=([^&]+)/);
+      let el = null;
+      if (mf) { const fid = decodeURIComponent(mf[1]); el = figFor(fid); el = el ? (el.querySelector("img,iframe") || el) : null; }
+      else if (ms) {
+        const t = decodeURIComponent(ms[1]);
+        let s = secFor(t) || [...document.querySelectorAll("section.section")].find((x) => { const hh = x.querySelector(":scope > h2"); return hh && hh.textContent.replace(/^[▾▸✎\s]*/, "").trim().startsWith(t); });
+        el = s ? (s.querySelector(":scope > h2") || s) : null;
+      }
+      if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); el.classList.add("anno-flash"); setTimeout(() => el.classList.remove("anno-flash"), 1800); }
+    };
+    focusTarget();
+    window.addEventListener("hashchange", focusTarget);
     console.log("[archeion] annotation layer ready:", rid, page);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", run);
