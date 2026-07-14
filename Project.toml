@@ -19,15 +19,15 @@ TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
 [sources.DataVault]
 rev = "main"
-url = "https://github.com/sotashimozono/DataVault.jl"
+url = "https://github.com/QAtlasHub/DataVault.jl"
 
 [sources.ParamIO]
 rev = "main"
-url = "https://github.com/sotashimozono/ParamIO.jl"
+url = "https://github.com/QAtlasHub/ParamIO.jl"
 
 [sources.Pinax]
 rev = "main"
-url = "https://github.com/sotashimozono/Pinax.jl"
+url = "https://github.com/QAtlasHub/Pinax.jl"
 
 [compat]
 Aqua = "0.8"
