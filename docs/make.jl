@@ -32,7 +32,7 @@ makedocs(;
 
 deploydocs(;
     versions=["stable", "dev"],
-    repo="github.com/sotashimozono/Archeion.jl.git",
+    repo="github.com/QAtlasHub/Archeion.jl.git",
     devbranch="main",
     push_preview=true,
 )
